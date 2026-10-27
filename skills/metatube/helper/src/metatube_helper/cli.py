@@ -6,12 +6,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from ruamel.yaml import YAML, YAMLError
+
 from metatube_helper import ytstudio
 from metatube_helper.config import config_path, default_mode, load_config, save_config, set_value
 from metatube_helper.discover import discover, to_jsonable
 from metatube_helper.episodes import EpisodeState, resolve, walker_entries
-from metatube_helper.manifest import Manifest, load_manifest, save_manifest, sync_ids
+from metatube_helper.manifest import Manifest, PlaylistRecord, load_manifest, save_manifest, sync_ids
 from metatube_helper.match import match_videos, parse_video_ref
+from metatube_helper.playlists import flag_items, lint_playlist, plan_adds
 from metatube_helper.schema import lint
 from metatube_helper.sidecars import (
     LiveSidecarError,
@@ -24,11 +27,16 @@ from metatube_helper.walker import WalkerSource, detect, load_source, video_root
 from metatube_helper.ytstudio import (
     PINNED_VERSION,
     SAFE_UPLOADS_PER_DAY,
+    add_argv,
     auth_check,
+    create_playlist_argv,
     estimate_quota,
     installed_version,
     list_channel_videos,
+    list_playlists,
+    parse_created_id,
     plan_upload,
+    playlist_items,
     run_ytstudio,
     update_argv,
     video_exists,
@@ -315,6 +323,140 @@ def cmd_walker_sync(a: argparse.Namespace) -> int:
     return _emit({"synced": True, "episodes": m2.episodes, "conflicts": [], "disagreements": []})
 
 
+def _series_context(a: argparse.Namespace):
+    """Like _walker_context, but refuses a single Walker video: only a series gets a playlist."""
+    src, m, code = _walker_context(a)
+    if src is not None and src.kind != "series":
+        return None, None, _error("playlists are for a Walker series; a single Walker video has none")
+    return src, m, code
+
+
+def _known_ids(m: Manifest, states: list[EpisodeState]) -> set[str]:
+    return {s.video_id for s in states if s.video_id} | {r.video_id for r in m.episodes.values() if r.video_id}
+
+
+def cmd_playlist_draft(a: argparse.Namespace) -> int:
+    src, m, code = _series_context(a)
+    if src is None:
+        return code
+    try:
+        raw = YAML(typ="safe").load(Path(a.draft).read_text(encoding="utf-8")) or {}
+    except (OSError, YAMLError) as exc:
+        return _error(f"cannot read draft {a.draft}: {exc}")
+    if not isinstance(raw, dict):
+        return _error(f"draft {a.draft} is not a mapping of title, description, privacy")
+    title, description, privacy = (str(raw.get(k) or "") for k in ("title", "description", "privacy"))
+    errors = lint_playlist(title, description, privacy)
+    if errors:
+        return _emit({"errors": errors}, 1)
+    old = m.playlist
+    m.playlist = PlaylistRecord(title, description, privacy,
+                                id=old.id if old else None, added=list(old.added) if old else [])
+    save_manifest(Path(a.source), m)
+    return _emit({"playlist": m.playlist, "written": True})
+
+
+def _run_adds(playlist_id: str, plan: list[tuple[str, str, int]]) -> list[dict]:
+    """Run each add in order; stop at the first that exits non-zero or doesn't report `1 added, 0 failed`
+    (later positions assume it worked). Unattempted adds have returncode None."""
+    results, stopped = [], False
+    for episode, video_id, position in plan:
+        args = add_argv(playlist_id, video_id, position, execute=True)
+        entry = {"episode": episode, "video_id": video_id, "position": position}
+        if stopped:
+            results.append({**entry, "argv": ["ytstudio", *args], "returncode": None, "stdout": "", "stderr": ""})
+            continue
+        r = run_ytstudio(args, _profile())
+        results.append({**entry, "argv": r.argv, "returncode": r.returncode, "stdout": r.stdout, "stderr": r.stderr})
+        stopped = r.returncode != 0 or "1 added, 0 failed" not in r.stdout
+    return results
+
+
+def cmd_playlist(a: argparse.Namespace) -> int:
+    src, m, code = _series_context(a)
+    if src is None:
+        return code
+    pl = m.playlist
+    if pl is None:
+        return _error("no playlist draft; run generate")
+    states = resolve(src, m)
+    disagreements = [{"episode": s.key, "message": s.message} for s in states if s.status == "disagreement"]
+    if disagreements:
+        return _emit({"error": "video ids disagree; run walker-sync and resolve them first",
+                      "disagreements": disagreements}, 1)
+    errors = lint_playlist(pl.title, pl.description, pl.privacy)
+    if errors:
+        return _emit({"errors": errors}, 1)
+    try:
+        create = None
+        if not pl.id:
+            wanted = pl.title.strip().casefold()
+            same = [p for p in list_playlists(_profile()) if p.title.strip().casefold() == wanted]
+            if same:
+                known = _known_ids(m, states)
+                collision = []
+                for p in same:
+                    its = playlist_items(p.id, _profile())
+                    collision.append({"id": p.id, "title": p.title, "items": its,
+                                      "flagged": flag_items(its, known, src.title)})
+                return _emit({"collision": collision}, 1)
+            args = create_playlist_argv(pl.title, pl.description, pl.privacy,
+                                        load_config().defaults.get("default_language"), execute=a.execute)
+            if not a.execute:
+                create = {"argv": ["ytstudio", *args]}
+            else:
+                r = run_ytstudio(args, _profile())
+                create = {"argv": r.argv, "returncode": r.returncode, "stdout": r.stdout, "stderr": r.stderr}
+                if r.returncode != 0:
+                    return _emit({"error": "playlist create failed", **create}, 1)
+                try:
+                    pl.id = parse_created_id(r.stdout)
+                except ValueError as exc:
+                    return _emit({"error": f"{exc}; the playlist may have been created: find it in Studio and "
+                                           "run playlist-adopt with its id", **create}, 1)
+                pl.added = []
+                save_manifest(Path(a.source), m)  # recorded before any add, so a failure can't orphan it
+        items = playlist_items(pl.id, _profile()) if pl.id else []
+        plan = plan_adds(states, m, items)
+        if not a.execute:
+            target = pl.id or "<new playlist id>"
+            adds = [{"episode": e, "video_id": v, "position": p,
+                     "argv": ["ytstudio", *add_argv(target, v, p, execute=False)]} for e, v, p in plan]
+            return _emit({"playlist_id": pl.id, "create": create, "adds": adds, "executed": False})
+        results = _run_adds(pl.id, plan)
+        present = {i.video_id for i in playlist_items(pl.id, _profile())} if results else set()
+    except RuntimeError as exc:
+        return _error(str(exc))
+    pl.added += [r["video_id"] for r in results if r["video_id"] in present and r["video_id"] not in pl.added]
+    save_manifest(Path(a.source), m)
+    not_added = [r for r in results if r["video_id"] not in present]
+    return _emit({"playlist_id": pl.id, "create": create, "adds": results, "added": pl.added,
+                  "not_added": not_added, "executed": True}, 1 if not_added else 0)
+
+
+def cmd_playlist_adopt(a: argparse.Namespace) -> int:
+    src, m, code = _series_context(a)
+    if src is None:
+        return code
+    pl = m.playlist
+    if pl is None:
+        return _error("no playlist draft; run generate")
+    if pl.id and pl.id != a.playlist_id:
+        return _error(f"metatube.yaml already records playlist {pl.id}; refusing to replace it")
+    states = resolve(src, m)
+    known = _known_ids(m, states)
+    try:
+        its = playlist_items(a.playlist_id, _profile())
+    except RuntimeError as exc:
+        return _error(str(exc))
+    flagged = flag_items(its, known, src.title)
+    if a.confirm:
+        pl.id = a.playlist_id
+        pl.added = [i.video_id for i in its if i.video_id in known]
+        save_manifest(Path(a.source), m)
+    return _emit({"playlist_id": a.playlist_id, "items": its, "flagged": flagged, "adopted": a.confirm})
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="metatube-helper")
     sub = p.add_subparsers(dest="command", required=True)
@@ -341,6 +483,12 @@ def _parser() -> argparse.ArgumentParser:
     s = sub.add_parser("walker-status"); s.add_argument("source"); s.add_argument("--repo", default=None)
     s.set_defaults(fn=cmd_walker_status)
     s = sub.add_parser("walker-sync"); s.add_argument("source"); s.set_defaults(fn=cmd_walker_sync)
+    s = sub.add_parser("playlist-draft"); s.add_argument("source")
+    s.add_argument("--from", dest="draft", required=True); s.set_defaults(fn=cmd_playlist_draft)
+    s = sub.add_parser("playlist"); s.add_argument("source"); s.add_argument("--execute", action="store_true")
+    s.set_defaults(fn=cmd_playlist)
+    s = sub.add_parser("playlist-adopt"); s.add_argument("source"); s.add_argument("playlist_id")
+    s.add_argument("--confirm", action="store_true"); s.set_defaults(fn=cmd_playlist_adopt)
     s = sub.add_parser("secrets-present"); s.set_defaults(fn=cmd_secrets_present)
     return p
 

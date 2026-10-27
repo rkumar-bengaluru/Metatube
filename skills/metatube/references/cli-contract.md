@@ -49,3 +49,29 @@ commands such as `profile brand`).
   `PYTHONUTF8=1` to make UTF-8 descriptions work on Windows.
 - Uploads from a Cloud project that hasn't passed the YouTube API compliance audit are locked
   private.
+
+## Playlists
+
+Verified against the installed 0.4.2 (`ytstudio playlists <cmd> --help` and the package source).
+Helper subcommands: `playlist-draft`, `playlist`, `playlist-adopt` (series only).
+
+- `ytstudio playlists list -n N -o json` returns `{"playlists": [{id, title, description,
+  published_at, item_count, privacy, default_language, localizations}], "next_page_token",
+  "total_results"}`. `-n` defaults to 50 and pages internally. The helper reads 50.
+- `ytstudio playlists items -o json -n N -- <playlist_id>` returns `{"items": [{id, video_id, title,
+  position, added_at, note}], "next_page_token", "total_results"}`, in playlist order (`position`
+  is 0-based). `id` is the playlist item id, not the video id. The helper reads up to 500.
+- `ytstudio playlists create --title T [--description D] [--privacy private|public|unlisted]
+  [--language L] [--execute]`. Dry run by default (a preview table, no API call). **Default
+  privacy is `private`**, so the helper always passes `--privacy`. On success it prints
+  `✓ Created: <title> (<id>)` through rich, **no JSON**. With stdout captured, rich wraps at 80
+  columns, so a long title puts `(<id>)` on its own line; the helper's parser allows that. If
+  YouTube returns no id it prints `(unknown)`, which the helper treats as a failure. About 50 units.
+- `ytstudio playlists add <playlist_id> --video <id> [--position N] [--execute]`. `--video` is
+  repeatable (the helper adds one video per call). Even a dry run calls the API: it first refuses
+  the channel's uploads playlist (exit 1). Prints `Added i/n <id>`, `Not found <id>` or
+  `Failed <id>: ...` per video and then `Done: N added, M failed`, and **exits 0 even when some
+  failed**. So the helper re-reads `items` afterwards and only records videos that are really
+  there. `quotaExceeded` and an expired session exit non-zero. About 50 units per video.
+- Playlist ids may start with `-`: the helper passes `-- <playlist_id>` after the options, as for
+  video ids. A `--video` value starting with `-` is taken as the option's value (checked with click).

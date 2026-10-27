@@ -127,6 +127,76 @@ def update_argv(video_id: str, sidecar: Mapping[str, Any], execute: bool) -> lis
     return [*argv, "--", video_id]
 
 
+@dataclass
+class PlaylistInfo:
+    id: str
+    title: str
+    item_count: int
+    privacy: str
+
+
+@dataclass
+class PlaylistItem:
+    video_id: str
+    title: str
+    position: int
+
+
+def _json_or_raise(result: RunResult, what: str) -> dict:
+    if result.returncode != 0:
+        raise RuntimeError((result.stdout + result.stderr).strip() or f"ytstudio {what} failed")
+    return json.loads(result.stdout)
+
+
+def list_playlists(profile: str | None) -> list[PlaylistInfo]:
+    payload = _json_or_raise(run_ytstudio(["playlists", "list", "-n", "50", "-o", "json"], profile), "playlists list")
+    return [
+        PlaylistInfo(id=p["id"], title=p.get("title", ""), item_count=int(p.get("item_count") or 0),
+                     privacy=p.get("privacy", ""))
+        for p in payload.get("playlists", [])
+    ]
+
+
+def playlist_items(playlist_id: str, profile: str | None) -> list[PlaylistItem]:
+    """Items in playlist order. Ids may start with "-", so the id goes after "--"."""
+    args = ["playlists", "items", "-n", "500", "-o", "json", "--", playlist_id]
+    payload = _json_or_raise(run_ytstudio(args, profile), "playlists items")
+    return [
+        PlaylistItem(video_id=i.get("video_id", ""), title=i.get("title", ""), position=int(i.get("position") or 0))
+        for i in payload.get("items", [])
+    ]
+
+
+def create_playlist_argv(title: str, description: str, privacy: str, language: str | None, execute: bool) -> list[str]:
+    argv = ["playlists", "create", "--title", title, "--description", description, "--privacy", privacy]
+    if language:
+        argv += ["--language", language]
+    if execute:
+        argv.append("--execute")
+    return argv
+
+
+# rich wraps `✓ Created: <title> (<id>)` at 80 columns when stdout is captured, so the id may sit on
+# its own line; ids have no spaces, so they are never split. ytstudio prints "unknown" if YouTube
+# returned no id.
+_CREATED = re.compile(r"Created: .*?\s\(([A-Za-z0-9_-]+)\)\s*\Z", re.DOTALL)
+
+
+def parse_created_id(stdout: str) -> str:
+    m = _CREATED.search(stdout)
+    if not m or m.group(1) == "unknown":
+        raise ValueError(f"no playlist id in ytstudio output: {stdout.strip()!r}")
+    return m.group(1)
+
+
+def add_argv(playlist_id: str, video_id: str, position: int, execute: bool) -> list[str]:
+    opts = ["--video", video_id, "--position", str(position)] + (["--execute"] if execute else [])
+    if playlist_id.startswith("-"):
+        # After "--" click treats it as positional, not an option; options must come first then.
+        return ["playlists", "add", *opts, "--", playlist_id]
+    return ["playlists", "add", playlist_id, *opts]
+
+
 def plan_upload(d: Discovery, max_uploads: int | None) -> UploadPlan:
     pending = [v.path for v in d.videos if v.sidecar is not None and not v.live]
     skipped = [v.path for v in d.videos if v.live]
