@@ -246,3 +246,42 @@ def test_playlist_reads_fail_closed_on_another_page(fake):
         list_playlists(None)
     with pytest.raises(RuntimeError, match="part of the list"):
         playlist_items("PL1", None)
+
+
+def _fake_uv_dir(tmp_path, layout):
+    py = tmp_path / "ytstudio-cli" / layout
+    py.parent.mkdir(parents=True)
+    py.write_text("")
+    return py
+
+
+@pytest.mark.parametrize("windows,layout", [(True, "Scripts/python.exe"), (False, "bin/python")])
+def test_ytstudio_python_paths(fake, monkeypatch, tmp_path, windows, layout):
+    py = _fake_uv_dir(tmp_path, layout)
+    monkeypatch.setattr(ytstudio, "_IS_WINDOWS", windows)
+    f = fake((0, str(tmp_path) + "\n"))
+    assert ytstudio.ytstudio_python() == py
+    assert f.calls[0][0] == ["uv", "tool", "dir"]
+
+
+def test_ytstudio_python_missing(fake, tmp_path):
+    fake((0, str(tmp_path)))
+    assert ytstudio.ytstudio_python() is None
+    fake(FileNotFoundError())
+    assert ytstudio.ytstudio_python() is None
+
+
+def test_run_captions_env_and_argv(fake, monkeypatch, tmp_path):
+    py = tmp_path / "python"
+    monkeypatch.setattr(ytstudio, "ytstudio_python", lambda: py)
+    f = fake((0, '{"tracks": []}'))
+    r = ytstudio.run_captions(["list", "vid"], profile="work")
+    argv, kwargs = f.calls[0]
+    assert argv[0] == str(py) and argv[1].endswith("yt_captions.py") and argv[2:] == ["list", "vid"]
+    assert kwargs["env"]["YTSTUDIO_PROFILE"] == "work" and kwargs["env"]["PYTHONUTF8"] == "1"
+    assert r.returncode == 0 and r.stdout == '{"tracks": []}'
+
+
+def test_run_captions_missing_interpreter(monkeypatch):
+    monkeypatch.setattr(ytstudio, "ytstudio_python", lambda: None)
+    assert ytstudio.run_captions(["list", "v"], None).returncode == 127

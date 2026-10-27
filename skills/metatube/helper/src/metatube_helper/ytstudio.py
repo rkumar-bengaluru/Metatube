@@ -64,6 +64,36 @@ def run_ytstudio(args: list[str], profile: str | None = None) -> RunResult:
     return RunResult(argv, proc.returncode, proc.stdout or "", proc.stderr or "")
 
 
+_IS_WINDOWS = os.name == "nt"
+
+
+def ytstudio_python() -> Path | None:
+    """ytstudio's own interpreter (a uv tool venv), or None if it can't be found."""
+    try:
+        proc = subprocess.run(["uv", "tool", "dir"], capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return None
+    if proc.returncode != 0 or not (proc.stdout or "").strip():
+        return None
+    venv = Path(proc.stdout.strip()) / "ytstudio-cli"
+    py = venv / "Scripts" / "python.exe" if _IS_WINDOWS else venv / "bin" / "python"
+    return py if py.exists() else None
+
+
+def run_captions(args: list[str], profile: str | None = None) -> RunResult:
+    """Run yt_captions.py under ytstudio's Python (it needs googleapiclient and ytstudio.services)."""
+    py = ytstudio_python()
+    if py is None:
+        return RunResult(["yt_captions.py", *args], 127, "", "ytstudio's Python not found (uv tool dir)")
+    argv = [str(py), str(Path(__file__).parent / "yt_captions.py"), *args]
+    env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+    if profile:
+        env["YTSTUDIO_PROFILE"] = profile
+    proc = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
+    return RunResult(argv, proc.returncode, proc.stdout or "", proc.stderr or "")
+
+
 def installed_version() -> str | None:
     result = run_ytstudio(["--version"])
     if result.returncode != 0:
