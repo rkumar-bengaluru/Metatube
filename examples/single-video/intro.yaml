@@ -1,0 +1,26 @@
+title: "tinyqueue Tutorial: Python Background Jobs with SQLite, No Redis"
+description: |
+  Learn tinyqueue, a Python background job queue backed by SQLite: install it, run a worker and retry failed jobs.
+
+  We clone the tinyqueue GitHub repo, define a job with the @tinyqueue.job decorator, enqueue it with .delay(), run a worker against a SQLite file, and configure retries with backoff — then inspect failed jobs from the CLI.
+
+  Good for Python developers who want background jobs without running Redis or a message broker. Café-sized deployments welcome.
+
+  Repo: https://github.com/example/tinyqueue
+
+  #Python #GitHub #BackgroundJobs
+tags:
+  - tinyqueue
+  - tinyqueue tutorial
+  - python background jobs
+  - python job queue
+  - sqlite job queue
+  - python task queue without redis
+  - python worker retries
+  - github repo tutorial
+  - python tutorial
+category_id: "28"
+privacy: public
+made_for_kids: false
+default_language: en
+default_audio_language: en
