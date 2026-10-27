@@ -1,0 +1,9 @@
+{
+  "name": "metatube",
+  "version": "0.1.0",
+  "description": "Turn a folder of training videos and their source material into YouTube videos with content-aware metadata, driving ytstudio-cli.",
+  "author": { "name": "rupakk-ava" },
+  "license": "MIT",
+  "repository": "https://github.com/rkumar-bengaluru/Metatube",
+  "keywords": ["youtube", "metadata", "seo", "ytstudio"]
+}
