@@ -22,6 +22,8 @@ class ChannelVideo:
     title: str
     privacy: str
     published_at: str
+    description: str = ""
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass

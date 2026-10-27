@@ -11,7 +11,7 @@ from metatube_helper.config import config_path, default_mode, load_config, save_
 from metatube_helper.discover import discover, to_jsonable
 from metatube_helper.match import match_videos, parse_video_ref
 from metatube_helper.schema import lint
-from metatube_helper.sidecars import LiveSidecarError, load_sidecar, set_video_id
+from metatube_helper.sidecars import LiveSidecarError, load_sidecar, set_video_id, write_sidecar
 from metatube_helper.ytstudio import (
     PINNED_VERSION,
     SAFE_UPLOADS_PER_DAY,
@@ -80,12 +80,33 @@ def cmd_match(a: argparse.Namespace) -> int:
 
 
 def cmd_set_video_id(a: argparse.Namespace) -> int:
+    sidecar = Path(a.sidecar)
     try:
         video_id = parse_video_ref(a.ref)
-        set_video_id(Path(a.sidecar), video_id)
+        holders = [v.stem for v in discover(sidecar.parent).videos
+                   if v.video_id == video_id and v.sidecar != sidecar]
+        if holders:
+            return _error(f"video {video_id} is already assigned to {', '.join(holders)}")
+        set_video_id(sidecar, video_id)
     except (ValueError, LiveSidecarError) as exc:
         return _error(str(exc))
     return _emit({"sidecar": a.sidecar, "video_id": video_id})
+
+
+def cmd_write_sidecar(a: argparse.Namespace) -> int:
+    target = Path(a.sidecar)
+    try:
+        data = load_sidecar(Path(a.draft))
+        existing_id = load_sidecar(target).get("video_id") if target.exists() else None
+        if existing_id and "video_id" not in data:
+            data["video_id"] = existing_id  # a revision of a live video keeps its id
+        result = lint(data)
+        if not result.ok:
+            return _emit({"errors": result.errors, "warnings": result.warnings}, 1)
+        write_sidecar(target, data)
+    except (ValueError, LiveSidecarError) as exc:
+        return _error(str(exc))
+    return _emit({"sidecar": str(target), "written": True, "warnings": result.warnings})
 
 
 def cmd_update(a: argparse.Namespace) -> int:
@@ -109,8 +130,26 @@ def cmd_upload(a: argparse.Namespace) -> int:
     results = ytstudio.run_upload(plan, execute=a.execute, profile=_profile())
     after = {v.stem for v in discover(folder).videos if v.live}
     code = results[-1].returncode if results else 0
-    return _emit({"plan": plan, "results": results, "now_live": sorted(after - before),
-                  "audit_passed": load_config().audit_passed}, code)
+    payload = {"plan": plan, "results": results, "now_live": sorted(after - before),
+               "audit_passed": load_config().audit_passed}
+    if not a.execute:
+        payload.update(_possible_duplicates(plan))
+    return _emit(payload, code)
+
+
+def _possible_duplicates(plan: ytstudio.UploadPlan) -> dict:
+    """Pending videos whose name matches a channel title were probably uploaded in Studio already."""
+    try:
+        channel = list_channel_videos(_profile())
+    except (RuntimeError, ValueError) as exc:
+        return {"possible_duplicates": [], "duplicate_check_error": str(exc)}
+    dupes = []
+    for path in plan.pending:
+        names = {path.stem.casefold(), path.name.casefold()}
+        ids = [v.id for v in channel if v.title.strip().casefold() in names]
+        if ids:
+            dupes.append({"stem": path.stem, "video_ids": ids})
+    return {"possible_duplicates": dupes}
 
 
 def cmd_quota(a: argparse.Namespace) -> int:
@@ -154,6 +193,8 @@ def _parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=cmd_match)
     s = sub.add_parser("set-video-id"); s.add_argument("sidecar"); s.add_argument("ref")
     s.set_defaults(fn=cmd_set_video_id)
+    s = sub.add_parser("write-sidecar"); s.add_argument("sidecar")
+    s.add_argument("--from", dest="draft", required=True); s.set_defaults(fn=cmd_write_sidecar)
     s = sub.add_parser("update"); s.add_argument("sidecar"); s.add_argument("--execute", action="store_true")
     s.set_defaults(fn=cmd_update)
     s = sub.add_parser("upload"); s.add_argument("folder"); s.add_argument("--execute", action="store_true")

@@ -71,7 +71,7 @@ def test_update_builds_argv_and_studio_url(tmp_path, capsys, monkeypatch):
     code, out = run(capsys, "update", str(tmp_path / "ep1.yaml"))
     assert code == 0
     assert out["studio_url"] == "https://studio.youtube.com/video/abcdefghijk/edit"
-    assert seen["args"][:5] == ["videos", "update", "abcdefghijk", "--title", "Café — intro"]
+    assert seen["args"] == ["videos", "update", "--title", "Café — intro", "--", "abcdefghijk"]
     assert "--execute" not in seen["args"]
 
 
@@ -121,3 +121,64 @@ def test_config_set_then_show(capsys):
 def test_config_set_unknown_key_exit_1(capsys):
     code, out = run(capsys, "config", "set", "token", "x")
     assert code == 1 and "error" in out
+
+
+def test_write_sidecar_from_draft_lints_and_writes(tmp_path, capsys):
+    draft = tmp_path / "draft.yaml"
+    write(tmp_path, "draft.yaml", SIDECAR + "tags: [a, b, c, d, e, f, g, h]\n")
+    code, out = run(capsys, "write-sidecar", str(tmp_path / "ep1.yaml"), "--from", str(draft))
+    assert code == 0 and load_sidecar(tmp_path / "ep1.yaml")["title"] == "Café — intro"
+
+
+def test_write_sidecar_refuses_lint_errors(tmp_path, capsys):
+    write(tmp_path, "draft.yaml", "title: x\n")
+    code, out = run(capsys, "write-sidecar", str(tmp_path / "ep1.yaml"), "--from", str(tmp_path / "draft.yaml"))
+    assert code == 1 and not (tmp_path / "ep1.yaml").exists() and out["errors"]
+
+
+def test_write_sidecar_keeps_live_video_id_even_if_draft_drops_it(tmp_path, capsys):
+    write(tmp_path, "ep1.yaml", SIDECAR + "video_id: abcdefghijk\n")
+    write(tmp_path, "draft.yaml", 'title: "New title"\ncategory_id: "28"\n')
+    code, out = run(capsys, "write-sidecar", str(tmp_path / "ep1.yaml"), "--from", str(tmp_path / "draft.yaml"))
+    data = load_sidecar(tmp_path / "ep1.yaml")
+    assert code == 0 and data["video_id"] == "abcdefghijk" and data["title"] == "New title"
+
+
+def test_write_sidecar_refuses_changed_video_id(tmp_path, capsys):
+    write(tmp_path, "ep1.yaml", SIDECAR + "video_id: abcdefghijk\n")
+    write(tmp_path, "draft.yaml", SIDECAR + "video_id: zzzzzzzzzzz\n")
+    code, out = run(capsys, "write-sidecar", str(tmp_path / "ep1.yaml"), "--from", str(tmp_path / "draft.yaml"))
+    assert code == 1 and load_sidecar(tmp_path / "ep1.yaml")["video_id"] == "abcdefghijk"
+
+
+def test_set_video_id_refuses_id_claimed_by_sibling(tmp_path, capsys):
+    write(tmp_path, "ep1.mp4")
+    write(tmp_path, "ep1.yaml", SIDECAR + "video_id: abcdefghijk\n")
+    write(tmp_path, "ep2.mp4")
+    write(tmp_path, "ep2.yaml", SIDECAR)
+    code, out = run(capsys, "set-video-id", str(tmp_path / "ep2.yaml"), "abcdefghijk")
+    assert code == 1 and "ep1" in out["error"]
+    assert "video_id" not in load_sidecar(tmp_path / "ep2.yaml")
+
+
+def test_match_includes_current_description_and_tags(tmp_path, capsys, monkeypatch):
+    from metatube_helper.match import ChannelVideo
+    write(tmp_path, "ep1.mp4")
+    write(tmp_path, "ep1.yaml", SIDECAR)
+    vids = [ChannelVideo("aaaaaaaaaaa", "ep1", "private", "2026-10-27", description="old desc", tags=["old"])]
+    monkeypatch.setattr(cli, "list_channel_videos", lambda profile, limit=50: vids)
+    code, out = run(capsys, "match", str(tmp_path))
+    cand = out["matches"][0]["candidates"][0]
+    assert cand["description"] == "old desc" and cand["tags"] == ["old"]
+
+
+def test_upload_dry_run_flags_videos_already_on_channel(tmp_path, capsys, monkeypatch):
+    from metatube_helper.match import ChannelVideo
+    write(tmp_path, "ep1.mp4")
+    write(tmp_path, "ep1.yaml", SIDECAR)
+    monkeypatch.setattr(cli, "list_channel_videos",
+                        lambda profile, limit=50: [ChannelVideo("aaaaaaaaaaa", "ep1", "private", "2026-10-27")])
+    monkeypatch.setattr("metatube_helper.ytstudio.run_ytstudio",
+                        lambda args, profile=None: RunResult(["ytstudio", *args], 0, "Dry-run.", ""))
+    code, out = run(capsys, "upload", str(tmp_path))
+    assert out["possible_duplicates"] == [{"stem": "ep1", "video_ids": ["aaaaaaaaaaa"]}]

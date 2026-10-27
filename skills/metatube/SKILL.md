@@ -2,9 +2,18 @@
 name: metatube
 description: Generate search-friendly YouTube metadata (title, description, tags) from a folder of training videos and their scripts, notes and transcripts, then apply it to YouTube through ytstudio-cli - either updating videos already uploaded in YouTube Studio or uploading new ones. Also sets up ytstudio-cli and Google OAuth. Use when the user wants to set up MetaTube, generate or improve YouTube metadata/sidecars for their videos, or update/upload/publish videos to their channel.
 allowed-tools:
-  - Bash(uv run *)
-  - Bash(ytstudio *)
-  - Bash(gcloud services *)
+  - Bash(uv run --project * metatube-helper discover *)
+  - Bash(uv run --project * metatube-helper lint *)
+  - Bash(uv run --project * metatube-helper auth-check)
+  - Bash(uv run --project * metatube-helper match *)
+  - Bash(uv run --project * metatube-helper quota *)
+  - Bash(uv run --project * metatube-helper config show)
+  - Bash(uv run --project * metatube-helper secrets-present)
+  - Bash(ytstudio status*)
+  - Bash(ytstudio --version)
+  - Bash(ytstudio profile brand show*)
+  - Bash(ytstudio videos categories*)
+  - Bash(gcloud services list *)
   - Bash(gcloud config get-value *)
   - Read
   - Write
@@ -27,12 +36,19 @@ uv run --project "<this skill's base directory>/helper" metatube-helper <subcomm
 ```
 
 (The base directory is shown when this skill loads.) Every subcommand prints one JSON object.
-Subcommands: `discover FOLDER`, `lint PATH`, `auth-check`, `match FOLDER [--limit N]`,
-`set-video-id SIDECAR REF`, `update SIDECAR [--execute]`, `upload FOLDER [--execute] [--max N]`,
-`quota FOLDER --mode update|upload`, `config show`, `config set KEY VALUE`, `secrets-present`.
+Subcommands: `discover FOLDER`, `lint PATH`, `write-sidecar SIDECAR --from DRAFT`, `auth-check`,
+`match FOLDER [--limit N]`, `set-video-id SIDECAR REF`, `update SIDECAR [--execute]`,
+`upload FOLDER [--execute] [--max N]`, `quota FOLDER --mode update|upload`, `config show`,
+`config set KEY VALUE`, `secrets-present`.
+
+Read-only subcommands run without a prompt. Writes and anything with `--execute` ask the user
+for permission each time; that prompt is part of the safety design, so don't ask the user to
+pre-approve them.
 
 Never run `ytstudio videos update` or `ytstudio videos upload` yourself: use the helper, which
-passes long descriptions safely and forces UTF-8. Raw `ytstudio` is fine for `status`, `init`,
+passes long descriptions safely and forces UTF-8. Never write or edit a sidecar (`*.yaml` next to
+a video) with the Write or Edit tool: write drafts elsewhere and use `write-sidecar`, which lints
+the draft and refuses to change or drop a `video_id`. Raw `ytstudio` is fine for `status`, `init`,
 `login` (user runs it), `profile brand show|edit|set`, `videos categories`.
 
 References (read when the step needs them): `references/cli-contract.md`,
@@ -106,11 +122,14 @@ Every step checks first and skips if already done. Tell the user which steps wer
 4. For each video write down a one-sentence summary of what it teaches and the queries a developer
    would type to find it (repo name, tool, task, error messages, concepts).
 5. Draft a sidecar per video using `config show` defaults and `references/seo-guide.md`.
-   Series (numbered files) use `Series Name Ep. N: Topic`.
-6. **Review gate.** Show every draft in one block: file, summary, then the YAML. Let the user
-   approve, edit or reject each one. Repeat until approved. Write nothing before approval.
-7. Write the approved sidecars (`<stem>.yaml`, UTF-8) with the Write tool, then `lint FOLDER`.
-   Fix errors and show warnings to the user.
+   Series (numbered files) use `Series Name Ep. N: Topic`. Write each draft to a scratch file
+   **outside the project folder** (your scratchpad/temp directory, e.g. `<stem>.draft.yaml`) and
+   run `lint` on it. Fix every error before the user sees it; keep the warnings to show them.
+6. **Review gate.** Show every draft in one block: file, summary, lint warnings, then the YAML.
+   Let the user approve, edit or reject each one. Re-lint edited drafts. Write nothing into the
+   project folder before approval.
+7. For each approved draft: `write-sidecar <folder>/<stem>.yaml --from <draft>`. It lints again,
+   keeps an existing `video_id`, and refuses to change one. Report any refusal to the user.
 8. If `discover` now says `fully_paired`, run `upload FOLDER` (no `--execute`: ytstudio's dry run)
    as a schema check and report problems. Never add `--execute` here.
 9. Tell the user the next step: `/metatube:publish FOLDER` (mode from config).
@@ -133,8 +152,12 @@ Mode = `--mode` argument, else `mode` from `config show`.
    - `ambiguous`: show the candidates; ask which one.
    - `missing`: ask for the video URL or id (Studio → video → share link).
    For each confirmed choice run `set-video-id SIDECAR <id or url>`. `preset` ones already have it.
-3. For each sidecar with a `video_id`, run `update SIDECAR` (dry run) and show current vs. new title,
-   description and tags.
+   `set-video-id` refuses an id another sidecar in the folder already holds; tell the user which.
+3. For each sidecar with a `video_id`, run `update SIDECAR` (dry run) and show **current vs. new**
+   title, description and tags side by side. Take "current" from the `match` candidate with that
+   id (`title`, `description`, `tags`); ytstudio's own dry run only prints the new title and
+   "description: (updated)". If the video isn't among the candidates (older than the last 50
+   uploads), say the current description isn't available and show only the new one.
 4. Ask explicitly: "Apply these changes?" Only on yes: `update SIDECAR --execute` for each.
 5. Report: updated (with `studio_url`), failed (with output). Then list what MetaTube can't set on
    existing videos and the sidecar's intended values — **category, language, made-for-kids,
@@ -150,6 +173,11 @@ Mode = `--mode` argument, else `mode` from `config show`.
    and propose `--max 6`.
 3. `upload FOLDER [--max N]` (dry run). Show the plan: `mode` (folder or per_file), `pending`,
    `skipped_live`, `not_ready` (videos without a sidecar - run generate first), and ytstudio's output.
+   **If `possible_duplicates` is not empty, stop:** those files have a video with the same name on
+   the channel already (probably uploaded in Studio during phase 1). Ask the user, video by video,
+   whether it's the same video; if yes, `set-video-id` it (then it's skipped, and
+   `/metatube:publish --mode update` applies the metadata) and re-run the dry run. If
+   `duplicate_check_error` is set, tell the user the check couldn't run and ask before going on.
 4. Ask explicitly: "Upload these N videos?" Only on yes: `upload FOLDER --execute [--max N]`.
 5. Report from `now_live` (with `https://youtu.be/<id>` from each sidecar), the results' output, and
    the quota estimate.

@@ -89,13 +89,14 @@ def list_channel_videos(profile: str | None, limit: int = 50) -> list[ChannelVid
     payload = json.loads(result.stdout)
     return [
         ChannelVideo(id=v["id"], title=v.get("title", ""), privacy=v.get("privacy", ""),
-                     published_at=v.get("published_at", ""))
+                     published_at=v.get("published_at", ""), description=v.get("description", ""),
+                     tags=list(v.get("tags") or []))
         for v in payload.get("videos", [])
     ]
 
 
 def update_argv(video_id: str, sidecar: Mapping[str, Any], execute: bool) -> list[str]:
-    argv = ["videos", "update", video_id, "--title", str(sidecar["title"])]
+    argv = ["videos", "update", "--title", str(sidecar["title"])]
     if sidecar.get("description"):
         argv += ["--description", str(sidecar["description"])]
     tags = list(sidecar.get("tags") or [])
@@ -105,22 +106,24 @@ def update_argv(video_id: str, sidecar: Mapping[str, Any], execute: bool) -> lis
         argv += ["--tags", ",".join(str(t) for t in tags)]
     if execute:
         argv.append("--execute")
-    return argv
+    # Ids may start with "-"; after "--" click treats it as positional, not an option.
+    return [*argv, "--", video_id]
 
 
 def plan_upload(d: Discovery, max_uploads: int | None) -> UploadPlan:
     pending = [v.path for v in d.videos if v.sidecar is not None and not v.live]
     skipped = [v.path for v in d.videos if v.live]
     not_ready = [v.path for v in d.videos if v.sidecar is None]
+    # Absolute paths never start with "-", so click can't mistake them for options.
     if d.fully_paired:
-        cmd = ["videos", "upload", str(d.folder)]
+        cmd = ["videos", "upload", os.path.abspath(d.folder)]
         if max_uploads:
             cmd += ["--max", str(max_uploads)]
         commands = [cmd]
         mode: Literal["folder", "per_file"] = "folder"
     else:
         chosen = pending[:max_uploads] if max_uploads else pending
-        commands = [["videos", "upload", str(p)] for p in chosen]
+        commands = [["videos", "upload", os.path.abspath(p)] for p in chosen]
         mode = "per_file"
     if max_uploads:
         pending = pending[:max_uploads]

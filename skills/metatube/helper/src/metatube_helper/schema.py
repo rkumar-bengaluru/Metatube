@@ -14,6 +14,7 @@ UNSUPPORTED_VIDEO_EXTS: tuple[str, ...] = (".avi", ".wmv", ".m4v", ".flv", ".mpg
 TITLE_SOFT_MAX = 70
 TAGS_MIN, TAGS_MAX = 8, 15
 TAGS_TOTAL_MAX_CHARS = 500
+DESCRIPTION_MAX_BYTES = 5000
 
 
 class Privacy(StrEnum):
@@ -76,12 +77,19 @@ def lint(data: Mapping[str, Any]) -> LintResult:
 
     if len(spec.title) > TITLE_SOFT_MAX:
         result.warnings.append(f"title: {len(spec.title)} chars, aim for <= {TITLE_SOFT_MAX}")
+    for name in ("title", "description"):
+        if any(ch in getattr(spec, name) for ch in "<>"):
+            result.errors.append(f"{name}: YouTube rejects '<' and '>'")
+    desc_bytes = len(spec.description.encode("utf-8"))
+    if desc_bytes > DESCRIPTION_MAX_BYTES:
+        result.errors.append(f"description: {desc_bytes} bytes, YouTube allows {DESCRIPTION_MAX_BYTES}")
     for tag in spec.tags:
         if "," in tag:
             result.errors.append(f"tags: {tag!r} contains a comma (ytstudio splits tags on commas)")
-    total = sum(len(t) for t in spec.tags)
+    # YouTube counts the separating commas and wraps multi-word tags in quotes.
+    total = sum(len(t) + (2 if " " in t else 0) for t in spec.tags) + max(len(spec.tags) - 1, 0)
     if total > TAGS_TOTAL_MAX_CHARS:
-        result.errors.append(f"tags: {total} chars total, YouTube allows {TAGS_TOTAL_MAX_CHARS}")
+        result.errors.append(f"tags: {total} chars as YouTube counts them, limit {TAGS_TOTAL_MAX_CHARS}")
     if not TAGS_MIN <= len(spec.tags) <= TAGS_MAX:
         result.warnings.append(f"tags: {len(spec.tags)} tags, aim for {TAGS_MIN}-{TAGS_MAX}")
     if spec.publish_at is not None and spec.privacy != Privacy.private:

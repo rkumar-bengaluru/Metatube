@@ -53,3 +53,22 @@ def test_publish_at_with_public_privacy_warns_forced_private():
         }
     )
     assert r.ok and any("private" in w for w in r.warnings)
+
+
+def test_description_over_5000_bytes_is_error():
+    assert not lint({"title": "a", "category_id": "28", "tags": TAGS8, "description": "é" * 2501}).ok
+
+
+def test_angle_brackets_in_title_or_description_are_errors():
+    assert not lint({"title": "a <b>", "category_id": "28", "tags": TAGS8}).ok
+    assert not lint({"title": "a", "category_id": "28", "tags": TAGS8, "description": "x > y"}).ok
+
+
+def test_tag_total_counts_commas_and_quotes_for_multiword_tags():
+    # 9 tags x 52 chars = 468, + 8 separators + 2 quotes each for multi-word tags = 494 -> ok
+    ok_tags = ["a" * 52] * 9
+    assert lint({"title": "a", "category_id": "28", "tags": ok_tags}).ok
+    multi = ["a b" + "c" * 49] * 9  # 52 chars each, quoted: 9*54 + 8 = 494 -> ok
+    assert lint({"title": "a", "category_id": "28", "tags": multi}).ok
+    over = ["a b" + "c" * 50] * 9  # 53 chars, quoted: 9*55 + 8 = 503 -> error
+    assert not lint({"title": "a", "category_id": "28", "tags": over}).ok

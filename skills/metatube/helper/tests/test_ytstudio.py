@@ -1,5 +1,7 @@
 import json
+import os
 import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -69,11 +71,26 @@ def test_run_missing_binary_gives_127(fake):
 def test_update_argv_passes_description_verbatim():
     desc = 'Línea 1\n\n"q" $HOME `x` — é\n'
     argv = update_argv("abcdefghijk", {"title": "T", "description": desc, "tags": ["a", "b"]}, execute=False)
-    assert argv[:3] == ["videos", "update", "abcdefghijk"]
+    assert argv[:2] == ["videos", "update"] and argv[-2:] == ["--", "abcdefghijk"]
     assert argv[argv.index("--description") + 1] == desc
     assert argv[argv.index("--tags") + 1] == "a,b"
     assert "--execute" not in argv
-    assert update_argv("abcdefghijk", {"title": "T"}, execute=True)[-1] == "--execute"
+    assert "--execute" in update_argv("abcdefghijk", {"title": "T"}, execute=True)
+
+
+def test_update_argv_id_starting_with_dash_is_positional():
+    argv = update_argv("-AbCdEfGhIj", {"title": "T"}, execute=True)
+    assert argv[-2:] == ["--", "-AbCdEfGhIj"]
+    assert argv.index("--execute") < argv.index("--")
+
+
+def test_update_argv_reaches_child_process_byte_exact():
+    desc = 'Línea 1\n\t"q" $HOME `x` \\ — é\n'
+    argv = update_argv("-AbCdEfGhIj", {"title": "T", "description": desc}, execute=False)
+    echo = "import sys,json; sys.stdout.reconfigure(encoding='utf-8'); print(json.dumps(sys.argv[1:]))"
+    out = subprocess.run([sys.executable, "-c", echo, *argv], capture_output=True, text=True,
+                         encoding="utf-8", env={**os.environ, "PYTHONUTF8": "1"})
+    assert json.loads(out.stdout) == argv
 
 
 def test_update_argv_omits_tags_when_none():
