@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# OAuth client secrets (never commit)
+client_secret*.json
+client_secrets.json
