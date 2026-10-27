@@ -97,7 +97,7 @@ Google's guide: [Quota and Compliance Audits](https://developers.google.com/yout
 | Requirement | Notes |
 | --- | --- |
 | **Claude Code** | With plugin support. |
-| **Python ≥ 3.12** and **uv** | `ytstudio-cli` is a Python tool, installed with `uv tool install`. |
+| **Python ≥ 3.12** and **uv** | `ytstudio-cli` is installed with `uv tool install`, and MetaTube's helper (`skills/metatube/helper`) runs with `uv run`. |
 | **`ytstudio-cli` 0.4.2** | Pinned. `/metatube:setup` offers to install it. |
 | **Google Cloud project** | **YouTube Data API v3** enabled. Setup also enables the **YouTube Analytics API** (ytstudio requests analytics scopes). |
 | **gcloud** (optional) | Used only to check/enable the APIs. |
@@ -112,16 +112,15 @@ Google's guide: [Quota and Compliance Audits](https://developers.google.com/yout
 
 ## Install
 
-```bash
-git clone https://github.com/rkumar-bengaluru/Metatube.git
-```
-
-Then in Claude Code:
+In Claude Code:
 
 ```
-/plugin marketplace add ./Metatube
-/plugin install metatube
+/plugin marketplace add rkumar-bengaluru/Metatube
+/plugin install metatube@metatube
 ```
+
+Or from a local clone: `/plugin marketplace add ./Metatube`, then the same install line.
+Then run `/metatube:setup`.
 
 ---
 
@@ -142,8 +141,8 @@ Every step checks first and is skipped if already done, so it's safe to re-run.
 5. **Login.** You run `! ytstudio login` and approve in the browser. The "Google hasn't verified
    this app" screen is expected for a Testing app.
 6. **Verify.** Confirms the login works and shows your channel name for you to confirm.
-7. **Defaults + brand voice.** Picks a default category and offers to create a brand voice file
-   (`ytstudio profile brand edit`) that keeps the tone consistent.
+7. **Defaults + brand voice.** Picks a default category and offers to write an optional brand voice
+   file (`~/.config/metatube/brand.md`) that keeps the tone consistent.
 8. **Audit status.** Asks whether the audit has passed and explains the steps above if not.
 9. **Config.** Writes `~/.config/metatube/config.yaml` (identifiers and defaults only, never
    tokens).

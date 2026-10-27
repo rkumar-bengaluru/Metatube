@@ -1,0 +1,11 @@
+{
+  "name": "metatube",
+  "owner": { "name": "rupakk-ava" },
+  "plugins": [
+    {
+      "name": "metatube",
+      "source": "./",
+      "description": "Content-aware YouTube metadata and uploads via ytstudio-cli."
+    }
+  ]
+}

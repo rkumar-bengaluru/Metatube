@@ -1,0 +1,24 @@
+title: "tinyqueue Deep Dive Ep. 2: Scheduled Jobs and Retry Backoff"
+description: |
+  Schedule Python background jobs with tinyqueue and make failures safe with retries, exponential backoff and re-queuing.
+
+  We cover delayed jobs with delay_until(), cron-style schedules with @tinyqueue.every("5m"), the retry policy (retries, backoff, jitter) and how to inspect and re-queue dead jobs from the CLI.
+
+  Repo: https://github.com/example/tinyqueue
+  Previous: Ep. 1, how the SQLite job queue works
+
+  #Python #GitHub #BackgroundJobs
+tags:
+  - tinyqueue
+  - tinyqueue scheduling
+  - python scheduled jobs
+  - python cron jobs
+  - retry exponential backoff
+  - python job retries
+  - python background jobs
+  - github repo tutorial
+category_id: "28"
+privacy: public
+made_for_kids: false
+default_language: en
+default_audio_language: en

@@ -1,0 +1,30 @@
+title: "tinyqueue Deep Dive Ep. 1: How the SQLite Job Queue Works"
+description: |
+  See how tinyqueue stores Python background jobs in SQLite and how workers claim them safely without double-processing.
+
+  We read the tinyqueue source on GitHub: the jobs table, claiming jobs with UPDATE … RETURNING inside a transaction, why WAL mode matters for concurrent workers, and the worker main loop — explained step by step for developers who want to understand, not just use, the library.
+
+  00:00 Intro
+  00:40 The jobs table
+  02:15 Claiming jobs safely
+  04:30 WAL mode and concurrent workers
+  06:10 The worker main loop
+
+  Repo: https://github.com/example/tinyqueue
+  Next: Ep. 2, scheduling and retries
+
+  #Python #SQLite #GitHub
+tags:
+  - tinyqueue
+  - tinyqueue internals
+  - sqlite job queue
+  - sqlite update returning
+  - sqlite wal mode
+  - python background jobs
+  - python job queue architecture
+  - github code walkthrough
+category_id: "28"
+privacy: public
+made_for_kids: false
+default_language: en
+default_audio_language: en
