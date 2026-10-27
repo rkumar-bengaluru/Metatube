@@ -125,7 +125,7 @@ the bookkeeping across episodes.
 - Consumes: Task 1 (`WalkerSource`, `find_runs`, `choose_run`, `video_root`, `expected_stem`), Task 2.
 - Produces:
   - `Status = Literal["ready", "live", "not_rendered", "explainer_only", "live_run_missing", "disagreement"]`
-  - `@dataclass EpisodeState: key: str; position: int; status: Status; run: RunVideo | None; newer_run: str | None; video_id: str | None; notes: list[Path]; transcript: Path | None; thin_sources: list[Path]; message: str = ""` with property `has_source`.
+  - `@dataclass EpisodeState: key: str; position: int; status: Status; run: RunVideo | None; newer_run: str | None; video_id: str | None; notes: list[Path]; transcript: Path | None; thin_sources: list[Path]; message: str = ""; warnings: list[str]` (default `[]` via field factory) with property `has_source` (any note or transcript not in `thin_sources`, exactly v1's rule). `warnings` gets `"run ids not in Walker's YYYYMMDD-HHMMSS form: <ids>; chose by file time (best effort)"` whenever `odd_run_ids` is non-empty.
   - `resolve(src: WalkerSource, m: Manifest) -> list[EpisodeState]`, rules in order:
     1. Candidates with a sidecar `video_id`: two different ids → `disagreement`; else the newest such run is the live `run`, status `live`, and `newer_run` = the `choose_run` id if it is a different, later run.
     2. Manifest has a `video_id` but no run carries it → `live_run_missing`.
