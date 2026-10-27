@@ -35,7 +35,9 @@ class Match:
 
 
 def _key(text: str) -> str:
-    return text.strip().casefold()
+    """Studio turns 'my-video_01.mp4' into 'my video 01', so compare with separators folded."""
+    key = re.sub(r"\.(mp4|mov|mkv|webm)$", "", text.strip().casefold())
+    return re.sub(r"[-_\s]+", " ", key).strip()
 
 
 def match_videos(entries: list[VideoEntry], channel: list[ChannelVideo]) -> list[Match]:
@@ -46,8 +48,7 @@ def match_videos(entries: list[VideoEntry], channel: list[ChannelVideo]) -> list
     found: dict[int, list[ChannelVideo]] = {}
     for i, e in enumerate(entries):
         if not e.video_id:
-            names = {_key(e.stem), _key(e.path.name)}
-            found[i] = [v for v in free if _key(v.title) in names]
+            found[i] = [v for v in free if _key(v.title) == _key(e.path.name)]
     single_hits = Counter(c[0].id for c in found.values() if len(c) == 1)
 
     matches: list[Match] = []

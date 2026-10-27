@@ -141,8 +141,8 @@ Every step checks first and is skipped if already done, so it's safe to re-run.
 5. **Login.** You run `! ytstudio login` and approve in the browser. The "Google hasn't verified
    this app" screen is expected for a Testing app.
 6. **Verify.** Confirms the login works and shows your channel name for you to confirm.
-7. **Defaults + brand voice.** Picks a default category and offers to create a brand voice file
-   (`ytstudio profile brand edit`) that keeps the tone consistent.
+7. **Defaults + brand voice.** Picks a default category and offers to write an optional brand voice
+   file (`~/.config/metatube/brand.md`) that keeps the tone consistent.
 8. **Audit status.** Asks whether the audit has passed and explains the steps above if not.
 9. **Config.** Writes `~/.config/metatube/config.yaml` (identifiers and defaults only, never
    tokens).

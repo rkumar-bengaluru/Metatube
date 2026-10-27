@@ -167,3 +167,20 @@ def test_run_upload_stops_on_first_failure(fake, tmp_path):
 
 def test_estimate_quota():
     assert estimate_quota(uploads=7, updates=2) == 11300
+
+
+def test_auth_check_api_disabled(fake):
+    fake((1, "YouTube Data API v3 has not been used in project 240379470336 before or it is disabled."))
+    assert auth_check(None).status == "api_disabled"
+
+
+@pytest.mark.parametrize("result,expected", [
+    ((0, '{"id": "abcdefghijk"}'), True),
+    ((1, "Video not found: abcdefghijk"), False),
+    ((1, "Session expired or revoked."), None),
+])
+def test_video_exists(fake, result, expected):
+    from metatube_helper.ytstudio import video_exists
+    f = fake(result)
+    assert video_exists("abcdefghijk", None) is expected
+    assert f.calls[0][0][1:] == ["videos", "show", "-o", "json", "--", "abcdefghijk"]

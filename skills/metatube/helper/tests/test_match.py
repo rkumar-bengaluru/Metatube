@@ -67,3 +67,9 @@ def test_parse_video_ref(ref):
 def test_parse_video_ref_rejects_garbage():
     with pytest.raises(ValueError):
         parse_video_ref("not a url")
+
+
+@pytest.mark.parametrize("title", ["metatube day one test", "Metatube_Day_One_Test", "metatube  day-one test.mp4"])
+def test_studio_title_with_spaces_for_hyphens_matches(title):
+    [m] = match_videos([entry("metatube-day-one-test")], [cv("aaaaaaaaaaa", title)])
+    assert m.status == "matched"

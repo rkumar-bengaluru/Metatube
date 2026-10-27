@@ -11,7 +11,13 @@ from metatube_helper.config import config_path, default_mode, load_config, save_
 from metatube_helper.discover import discover, to_jsonable
 from metatube_helper.match import match_videos, parse_video_ref
 from metatube_helper.schema import lint
-from metatube_helper.sidecars import LiveSidecarError, load_sidecar, set_video_id, write_sidecar
+from metatube_helper.sidecars import (
+    LiveSidecarError,
+    load_sidecar,
+    replace_video_id,
+    set_video_id,
+    write_sidecar,
+)
 from metatube_helper.ytstudio import (
     PINNED_VERSION,
     SAFE_UPLOADS_PER_DAY,
@@ -22,6 +28,7 @@ from metatube_helper.ytstudio import (
     plan_upload,
     run_ytstudio,
     update_argv,
+    video_exists,
 )
 
 CLIENT_SECRETS = Path.home() / ".config" / "ytstudio-cli" / "client_secrets.json"
@@ -87,7 +94,15 @@ def cmd_set_video_id(a: argparse.Namespace) -> int:
                    if v.video_id == video_id and v.sidecar != sidecar]
         if holders:
             return _error(f"video {video_id} is already assigned to {', '.join(holders)}")
-        set_video_id(sidecar, video_id)
+        old = load_sidecar(sidecar).get("video_id")
+        if a.replace_deleted and old and old != video_id:
+            exists = video_exists(old, _profile())
+            if exists is not False:
+                state = "still exists" if exists else "could not be checked"
+                return _error(f"current video {old} {state}; refusing to replace it")
+            replace_video_id(sidecar, video_id, expected_old=old)
+        else:
+            set_video_id(sidecar, video_id)
     except (ValueError, LiveSidecarError) as exc:
         return _error(str(exc))
     return _emit({"sidecar": a.sidecar, "video_id": video_id})
@@ -166,7 +181,9 @@ def cmd_quota(a: argparse.Namespace) -> int:
 
 def _config_payload() -> dict:
     cfg = load_config()
-    return {**to_jsonable(cfg), "mode": default_mode(cfg), "path": str(config_path())}
+    brand = config_path().parent / "brand.md"
+    return {**to_jsonable(cfg), "mode": default_mode(cfg), "path": str(config_path()),
+            "brand_path": str(brand), "brand_exists": brand.exists()}
 
 
 def cmd_config(a: argparse.Namespace) -> int:
@@ -192,7 +209,7 @@ def _parser() -> argparse.ArgumentParser:
     s = sub.add_parser("match"); s.add_argument("folder"); s.add_argument("--limit", type=int, default=50)
     s.set_defaults(fn=cmd_match)
     s = sub.add_parser("set-video-id"); s.add_argument("sidecar"); s.add_argument("ref")
-    s.set_defaults(fn=cmd_set_video_id)
+    s.add_argument("--replace-deleted", action="store_true"); s.set_defaults(fn=cmd_set_video_id)
     s = sub.add_parser("write-sidecar"); s.add_argument("sidecar")
     s.add_argument("--from", dest="draft", required=True); s.set_defaults(fn=cmd_write_sidecar)
     s = sub.add_parser("update"); s.add_argument("sidecar"); s.add_argument("--execute", action="store_true")

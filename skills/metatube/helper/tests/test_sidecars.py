@@ -44,3 +44,13 @@ def test_set_video_id_idempotent_and_guarded(tmp_path):
     assert load_sidecar(p)["video_id"] == "abcdefghijk"
     with pytest.raises(LiveSidecarError):
         set_video_id(p, "zzzzzzzzzzz")
+
+
+def test_replace_video_id_requires_expected_old(tmp_path):
+    from metatube_helper.sidecars import replace_video_id
+    p = tmp_path / "a.yaml"
+    write_sidecar(p, {"title": "a", "category_id": "28", "video_id": "abcdefghijk"})
+    with pytest.raises(LiveSidecarError):
+        replace_video_id(p, "zzzzzzzzzzz", expected_old="yyyyyyyyyyy")
+    replace_video_id(p, "zzzzzzzzzzz", expected_old="abcdefghijk")
+    assert load_sidecar(p)["video_id"] == "zzzzzzzzzzz"

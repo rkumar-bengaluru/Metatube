@@ -11,7 +11,6 @@ allowed-tools:
   - Bash(uv run --project * metatube-helper secrets-present)
   - Bash(ytstudio status*)
   - Bash(ytstudio --version)
-  - Bash(ytstudio profile brand show*)
   - Bash(ytstudio videos categories*)
   - Bash(gcloud services list *)
   - Bash(gcloud config get-value *)
@@ -49,7 +48,8 @@ Never run `ytstudio videos update` or `ytstudio videos upload` yourself: use the
 passes long descriptions safely and forces UTF-8. Never write or edit a sidecar (`*.yaml` next to
 a video) with the Write or Edit tool: write drafts elsewhere and use `write-sidecar`, which lints
 the draft and refuses to change or drop a `video_id`. Raw `ytstudio` is fine for `status`, `init`,
-`login` (user runs it), `profile brand show|edit|set`, `videos categories`.
+`login` (user runs it), `videos categories`. ytstudio 0.4.2 has **no** `profile brand` command
+(it exists only in unreleased ytstudio source); don't call it.
 
 References (read when the step needs them): `references/cli-contract.md`,
 `references/sidecar-schema.md`, `references/seo-guide.md`, `references/setup-console-steps.md`,
@@ -95,9 +95,9 @@ Every step checks first and skips if already done. Tell the user which steps wer
    `config set channel_title "<name>"` (and `channel_id` if shown), `config set gcp_project <id>`.
 7. **Defaults + brand voice.** Show the defaults (`config show`): public, category 28 (Science &
    Technology), English, made_for_kids false. Offer category 27 (Education) as the alternative and
-   apply changes with `config set defaults.<key> <value>`. Check `ytstudio profile brand show`; if
-   unset, offer to create one (`ytstudio profile brand edit`, or write a file and
-   `ytstudio profile brand set --file <file>`).
+   apply changes with `config set defaults.<key> <value>`. Brand voice is optional: `config show`
+   gives `brand_path` and `brand_exists`. If it doesn't exist, offer to write a short brand voice
+   (tone, audience, words to use/avoid, sign-off) to `brand_path` with the user's input.
 8. **Audit.** Ask whether the Cloud project has passed the YouTube API compliance audit.
    Save `config set audit_passed true|false`. If false, explain: API uploads are locked private until
    it passes, so for now upload in Studio and use `/metatube:publish --mode update`. Then walk them
@@ -114,11 +114,15 @@ Every step checks first and skips if already done. Tell the user which steps wer
      then keep its `video_id` exactly.
    - existing sidecar, not live → ask: regenerate or keep?
    - `has_source: false` → refuse to draft that video and say which files you looked for
-     (`<stem>.md/.txt`, `<stem>.srt/.vtt`, `<stem>.pdf/.pptx`).
+     (`<stem>.md/.txt`, `<stem>.srt/.vtt`, `<stem>.pdf/.pptx`). Files listed in `thin_sources`
+     were found but are empty or too short (under 20 words of notes, after any frontmatter):
+     name them and ask for real notes or a transcript.
+   - Even with `has_source: true`, if the notes turn out to be unrelated to a video (e.g. a copied
+     command or template file), treat it as no source and say so.
    - `sidecar_error` set → show it; ask before overwriting.
 3. Read the sources: notes, transcripts, slides (text where readable), the folder README, and the
    public README of any GitHub repo URL in the notes if you can reach it (no cloning).
-   `ytstudio profile brand show` for tone (skip if unset).
+   If `config show` says `brand_exists`, read `brand_path` for tone; otherwise skip it.
 4. For each video write down a one-sentence summary of what it teaches and the queries a developer
    would type to find it (repo name, tool, task, error messages, concepts).
 5. Draft a sidecar per video using `config show` defaults and `references/seo-guide.md`.
@@ -142,6 +146,9 @@ Mode = `--mode` argument, else `mode` from `config show`.
 - `expired` → "Your Google login has expired (Testing-mode apps expire every 7 days)." Ask the user
   to run `! ytstudio login`, then re-run `auth-check`. Don't continue until `ok`.
 - `not_initialized` / `not_installed` → send them to `/metatube:setup`.
+- `api_disabled` → the YouTube Data API is off in the Cloud project. Give the link
+  `https://console.cloud.google.com/apis/api/youtube.googleapis.com/overview?project=<gcp_project>`
+  (from `config show`), ask them to click Enable, wait a few minutes, then re-run `auth-check`.
 - `error` → show `detail` and stop.
 
 ### Mode update (phase 1: videos uploaded by hand in Studio)
@@ -153,6 +160,11 @@ Mode = `--mode` argument, else `mode` from `config show`.
    - `missing`: ask for the video URL or id (Studio → video → share link).
    For each confirmed choice run `set-video-id SIDECAR <id or url>`. `preset` ones already have it.
    `set-video-id` refuses an id another sidecar in the folder already holds; tell the user which.
+   Studio titles new uploads from the file name with hyphens/underscores turned into spaces; the
+   matcher allows for that.
+   If a `preset` video was deleted from YouTube (`update` says "Video not found"), and the user has
+   re-uploaded it, run `set-video-id SIDECAR <new id or url> --replace-deleted`. It only replaces
+   the old id after YouTube confirms the old video is gone.
 3. For each sidecar with a `video_id`, run `update SIDECAR` (dry run) and show **current vs. new**
    title, description and tags side by side. Take "current" from the `match` candidate with that
    id (`title`, `description`, `tags`); ytstudio's own dry run only prints the new title and

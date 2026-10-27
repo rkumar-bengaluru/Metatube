@@ -54,6 +54,20 @@ def write_sidecar(path: Path, data: Mapping[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def replace_video_id(path: Path, video_id: str, expected_old: str) -> None:
+    """Re-point a sidecar whose video was deleted. The caller must have confirmed the deletion."""
+    data = load_sidecar(path)
+    if data.get("video_id") != expected_old:
+        raise LiveSidecarError(f"{Path(path).name}: video_id is {data.get('video_id')}, not {expected_old}")
+    data["video_id"] = video_id
+    data.pop("uploaded_at", None)
+    buf = io.StringIO()
+    _yaml().dump(data, buf)
+    tmp = Path(path).with_name(Path(path).name + ".tmp")
+    tmp.write_text(buf.getvalue(), encoding="utf-8", newline="\n")
+    os.replace(tmp, path)
+
+
 def set_video_id(path: Path, video_id: str) -> None:
     data = load_sidecar(path)
     existing = data.get("video_id")

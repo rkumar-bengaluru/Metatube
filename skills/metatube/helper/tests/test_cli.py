@@ -25,7 +25,7 @@ def write(folder, name, text=""):
 
 def test_discover_json_round_trip(tmp_path, capsys):
     write(tmp_path, "ep1.mp4")
-    write(tmp_path, "ep1.md")
+    write(tmp_path, "ep1.md", "Notes: " + "this clip shows how the repo is installed and run step by step " * 3)
     write(tmp_path, "ep1.yaml", SIDECAR)
     code, out = run(capsys, "discover", str(tmp_path))
     assert code == 0 and out["fully_paired"] is True
@@ -182,3 +182,28 @@ def test_upload_dry_run_flags_videos_already_on_channel(tmp_path, capsys, monkey
                         lambda args, profile=None: RunResult(["ytstudio", *args], 0, "Dry-run.", ""))
     code, out = run(capsys, "upload", str(tmp_path))
     assert out["possible_duplicates"] == [{"stem": "ep1", "video_ids": ["aaaaaaaaaaa"]}]
+
+
+def test_config_show_reports_brand_file(tmp_path, capsys):
+    code, out = run(capsys, "config", "show")
+    assert out["brand_path"].endswith("brand.md") and out["brand_exists"] is False
+    from pathlib import Path
+    Path(out["brand_path"]).parent.mkdir(parents=True, exist_ok=True)
+    Path(out["brand_path"]).write_text("Friendly, precise.", encoding="utf-8")
+    code, out = run(capsys, "config", "show")
+    assert out["brand_exists"] is True
+
+
+def test_set_video_id_replace_deleted(tmp_path, capsys, monkeypatch):
+    write(tmp_path, "ep1.yaml", SIDECAR + "video_id: abcdefghijk\n")
+    monkeypatch.setattr(cli, "video_exists", lambda vid, profile=None: False)
+    code, out = run(capsys, "set-video-id", str(tmp_path / "ep1.yaml"), "zzzzzzzzzzz", "--replace-deleted")
+    assert code == 0 and load_sidecar(tmp_path / "ep1.yaml")["video_id"] == "zzzzzzzzzzz"
+
+
+@pytest.mark.parametrize("exists", [True, None])
+def test_set_video_id_replace_refused_unless_confirmed_deleted(tmp_path, capsys, monkeypatch, exists):
+    write(tmp_path, "ep1.yaml", SIDECAR + "video_id: abcdefghijk\n")
+    monkeypatch.setattr(cli, "video_exists", lambda vid, profile=None: exists)
+    code, out = run(capsys, "set-video-id", str(tmp_path / "ep1.yaml"), "zzzzzzzzzzz", "--replace-deleted")
+    assert code == 1 and load_sidecar(tmp_path / "ep1.yaml")["video_id"] == "abcdefghijk"

@@ -1,7 +1,8 @@
 # ytstudio-cli contract (pinned 0.4.2)
 
-Verified against ytstudio-cli source at v0.4.2 (commit 242ee3a). Re-verify everything here
-before bumping the pin.
+Verified against the installed ytstudio-cli 0.4.2 from PyPI. Re-verify everything here before
+bumping the pin, against the released package, not the GitHub main branch (main has unreleased
+commands such as `profile brand`).
 
 ## Install and auth
 
@@ -23,7 +24,9 @@ before bumping the pin.
   published_at, privacy, tags, category_id, ...}], "next_page_token", "total_results"}`
   (1 unit). It lists the channel's uploads playlist, including private videos.
 - `ytstudio videos categories` lists category ids.
-- `ytstudio profile brand show` prints the brand voice; exits non-zero when none is set.
+- `ytstudio videos show -o json -- <id>` prints one video; "Video not found: <id>" and exit 1 when
+  it was deleted.
+- No `profile brand` command in 0.4.2. MetaTube keeps its own optional `brand.md` next to its config.
 
 ## Updating (phase 1)
 

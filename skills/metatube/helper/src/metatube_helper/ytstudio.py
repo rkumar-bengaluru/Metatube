@@ -18,6 +18,7 @@ QUOTA_UPDATE = 50
 DAILY_QUOTA = 10000
 SAFE_UPLOADS_PER_DAY = 6
 
+_API_DISABLED_MARKERS = ("has not been used in project", "it is disabled", "accessNotConfigured")
 _EXPIRED_MARKERS = ("Session expired", "re-authenticate", "Credentials expired")
 _NOT_INIT_MARKERS = ("No client secrets", "Not authenticated", "ytstudio init", "ytstudio login")
 
@@ -32,7 +33,7 @@ class RunResult:
 
 @dataclass
 class AuthResult:
-    status: Literal["ok", "expired", "not_initialized", "not_installed", "error"]
+    status: Literal["ok", "expired", "not_initialized", "not_installed", "api_disabled", "error"]
     detail: str
 
 
@@ -74,12 +75,24 @@ def auth_check(profile: str | None) -> AuthResult:
         return AuthResult("ok", "")
     if result.returncode == 127:
         return AuthResult("not_installed", output)
+    if any(m in output for m in _API_DISABLED_MARKERS):
+        return AuthResult("api_disabled", output)
     # Check expiry before "not initialized": the expiry message also mentions "ytstudio login".
     if any(m in output for m in _EXPIRED_MARKERS):
         return AuthResult("expired", output)
     if any(m in output for m in _NOT_INIT_MARKERS):
         return AuthResult("not_initialized", output)
     return AuthResult("error", output[-2000:])
+
+
+def video_exists(video_id: str, profile: str | None) -> bool | None:
+    """True/False when YouTube answers clearly; None when it can't tell (auth, network...)."""
+    result = run_ytstudio(["videos", "show", "-o", "json", "--", video_id], profile)
+    if result.returncode == 0:
+        return True
+    if "Video not found" in result.stdout + result.stderr:
+        return False
+    return None
 
 
 def list_channel_videos(profile: str | None, limit: int = 50) -> list[ChannelVideo]:
