@@ -392,7 +392,7 @@ def cmd_playlist(a: argparse.Namespace) -> int:
         if not pl.id:
             wanted = pl.title.strip().casefold()
             same = [p for p in list_playlists(_profile()) if p.title.strip().casefold() == wanted]
-            if same:
+            if same and not a.create_new:
                 known = _known_ids(m, states)
                 collision = []
                 for p in same:
@@ -486,6 +486,8 @@ def _parser() -> argparse.ArgumentParser:
     s = sub.add_parser("playlist-draft"); s.add_argument("source")
     s.add_argument("--from", dest="draft", required=True); s.set_defaults(fn=cmd_playlist_draft)
     s = sub.add_parser("playlist"); s.add_argument("source"); s.add_argument("--execute", action="store_true")
+    s.add_argument("--create-new", action="store_true",
+                   help="the same-title playlist is a different one; create this series' own")
     s.set_defaults(fn=cmd_playlist)
     s = sub.add_parser("playlist-adopt"); s.add_argument("source"); s.add_argument("playlist_id")
     s.add_argument("--confirm", action="store_true"); s.set_defaults(fn=cmd_playlist_adopt)

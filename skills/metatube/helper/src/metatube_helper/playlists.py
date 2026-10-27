@@ -64,6 +64,6 @@ def plan_adds(states: list[EpisodeState], m: Manifest, items: list[PlaylistItem]
 
 
 def flag_items(items: list[PlaylistItem], known_ids: set[str], series_title: str) -> list[PlaylistItem]:
-    """Items that look foreign: not one of the series' video ids and not carrying the series title."""
+    """Items to show the owner: not one of the series' video ids, or not carrying the series title."""
     wanted = series_title.casefold()
-    return [i for i in items if i.video_id not in known_ids and wanted not in i.title.casefold()]
+    return [i for i in items if i.video_id not in known_ids or wanted not in i.title.casefold()]

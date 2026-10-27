@@ -42,10 +42,12 @@ def test_plan_adds_skips_disagreement():
 
 
 def test_flag_items():
-    its = [PlaylistItem("a", "anything", 0), PlaylistItem("z", "Cube GS: part 9", 1),
-           PlaylistItem("y", "Cooking pasta", 2)]
-    flagged = flag_items(its, {"a"}, "cube gs")
-    assert [i.video_id for i in flagged] == ["y"]
+    its = [PlaylistItem("a", "Cube GS: install", 0),   # known id, carries the title: fine
+           PlaylistItem("z", "Cube GS: part 9", 1),    # unknown id, even with the title: flagged
+           PlaylistItem("b", "Install the solver", 2),  # known id, title lacks the series title: flagged
+           PlaylistItem("y", "Cooking pasta", 3)]
+    flagged = flag_items(its, {"a", "b"}, "cube gs")
+    assert [i.video_id for i in flagged] == ["z", "b", "y"]
 
 
 def test_lint_playlist():

@@ -142,14 +142,23 @@ class PlaylistItem:
     position: int
 
 
+# ytstudio pages internally up to -n. A partial list could hide a duplicate playlist or misplace an
+# episode, so the helper asks for everything and fails closed if ytstudio still reports another page.
+PLAYLIST_READ_LIMIT = "5000"
+
+
 def _json_or_raise(result: RunResult, what: str) -> dict:
     if result.returncode != 0:
         raise RuntimeError((result.stdout + result.stderr).strip() or f"ytstudio {what} failed")
-    return json.loads(result.stdout)
+    payload = json.loads(result.stdout)
+    if payload.get("next_page_token"):
+        raise RuntimeError(f"ytstudio {what} returned only part of the list (more than {PLAYLIST_READ_LIMIT})")
+    return payload
 
 
 def list_playlists(profile: str | None) -> list[PlaylistInfo]:
-    payload = _json_or_raise(run_ytstudio(["playlists", "list", "-n", "50", "-o", "json"], profile), "playlists list")
+    args = ["playlists", "list", "-n", PLAYLIST_READ_LIMIT, "-o", "json"]
+    payload = _json_or_raise(run_ytstudio(args, profile), "playlists list")
     return [
         PlaylistInfo(id=p["id"], title=p.get("title", ""), item_count=int(p.get("item_count") or 0),
                      privacy=p.get("privacy", ""))
@@ -159,7 +168,7 @@ def list_playlists(profile: str | None) -> list[PlaylistInfo]:
 
 def playlist_items(playlist_id: str, profile: str | None) -> list[PlaylistItem]:
     """Items in playlist order. Ids may start with "-", so the id goes after "--"."""
-    args = ["playlists", "items", "-n", "500", "-o", "json", "--", playlist_id]
+    args = ["playlists", "items", "-n", PLAYLIST_READ_LIMIT, "-o", "json", "--", playlist_id]
     payload = _json_or_raise(run_ytstudio(args, profile), "playlists items")
     return [
         PlaylistItem(video_id=i.get("video_id", ""), title=i.get("title", ""), position=int(i.get("position") or 0))

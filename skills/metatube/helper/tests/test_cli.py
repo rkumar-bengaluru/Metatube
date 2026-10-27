@@ -387,7 +387,7 @@ def test_playlist_collision_stops(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(cli, "run_ytstudio", yt)
     monkeypatch.setattr(cli, "list_playlists", lambda profile: [PlaylistInfo("PLold", " Cube-GS ", 2, "public")])
     monkeypatch.setattr(cli, "playlist_items", lambda pid, profile: [
-        PlaylistItem("abcdefghijk", "Install", 0), PlaylistItem("zzzzzzzzzzz", "Pasta", 1)])
+        PlaylistItem("abcdefghijk", "cube-gs: install", 0), PlaylistItem("zzzzzzzzzzz", "Pasta", 1)])
     code, out = run(capsys, "playlist", str(s), "--execute")
     assert code == 1 and yt.calls == []
     [c] = out["collision"]
@@ -487,7 +487,7 @@ def test_playlist_adopt_requires_confirm(tmp_path, capsys, monkeypatch):
     from metatube_helper.ytstudio import PlaylistItem
     s = _playlist_series(tmp_path, monkeypatch)
     monkeypatch.setattr(cli, "playlist_items", lambda pid, profile: [
-        PlaylistItem("abcdefghijk", "Install", 0), PlaylistItem("zzzzzzzzzzz", "Pasta", 1)])
+        PlaylistItem("abcdefghijk", "cube-gs: install", 0), PlaylistItem("zzzzzzzzzzz", "Pasta", 1)])
     code, out = run(capsys, "playlist-adopt", str(s), "PLold")
     assert code == 0 and out["adopted"] is False
     assert [f["video_id"] for f in out["flagged"]] == ["zzzzzzzzzzz"] and len(out["items"]) == 2
@@ -503,3 +503,18 @@ def test_playlist_adopt_refuses_to_replace_existing_id(tmp_path, capsys, monkeyp
     monkeypatch.setattr(cli, "playlist_items", lambda pid, profile: [])
     code, out = run(capsys, "playlist-adopt", str(s), "PLother", "--confirm")
     assert code == 1 and "PL1" in out["error"]
+
+
+def test_playlist_create_new_skips_collision(tmp_path, capsys, monkeypatch):
+    from metatube_helper.manifest import load_manifest
+    from metatube_helper.ytstudio import PlaylistInfo
+    s = _playlist_series(tmp_path, monkeypatch)
+    yt = FakeYt()
+    monkeypatch.setattr(cli, "run_ytstudio", yt)
+    monkeypatch.setattr(cli, "list_playlists", lambda profile: [PlaylistInfo("PLold", "cube-gs", 2, "public")])
+    monkeypatch.setattr(cli, "playlist_items", lambda pid, profile: [])
+    code, out = run(capsys, "playlist", str(s), "--execute")
+    assert code == 1 and "collision" in out and yt.calls == []
+    code, out = run(capsys, "playlist", str(s), "--execute", "--create-new")
+    assert yt.calls[0][:2] == ["playlists", "create"] and yt.calls[0][-1] == "--execute"
+    assert load_manifest(s).playlist.id == "PLnew_1"

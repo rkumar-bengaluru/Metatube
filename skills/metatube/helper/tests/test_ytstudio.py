@@ -207,7 +207,7 @@ def test_list_playlists_parses_json(fake):
                                             "item_count": 3, "privacy": "public"}],
                              "next_page_token": None, "total_results": 1})))
     assert list_playlists("work") == [PlaylistInfo("PL1", "Cube", 3, "public")]
-    assert f.calls[0][0][1:] == ["playlists", "list", "-n", "50", "-o", "json"]
+    assert f.calls[0][0][1:] == ["playlists", "list", "-n", "5000", "-o", "json"]
 
 
 def test_playlist_items_parses_json_and_raises(fake):
@@ -216,7 +216,7 @@ def test_playlist_items_parses_json_and_raises(fake):
                                         "added_at": "", "note": ""}]})),
              (1, "Session expired or revoked."))
     assert playlist_items("-PL1", None) == [PlaylistItem("abcdefghijk", "ep1", 0)]
-    assert f.calls[0][0][1:] == ["playlists", "items", "-n", "500", "-o", "json", "--", "-PL1"]
+    assert f.calls[0][0][1:] == ["playlists", "items", "-n", "5000", "-o", "json", "--", "-PL1"]
     with pytest.raises(RuntimeError, match="Session expired"):
         playlist_items("PL1", None)
 
@@ -236,3 +236,13 @@ def test_add_argv():
     assert add_argv("PL1", "abcdefghijk", 0, execute=True)[-1] == "--execute"
     assert add_argv("-PL1", "abcdefghijk", 0, execute=True) == [
         "playlists", "add", "--video", "abcdefghijk", "--position", "0", "--execute", "--", "-PL1"]
+
+
+def test_playlist_reads_fail_closed_on_another_page(fake):
+    from metatube_helper.ytstudio import list_playlists, playlist_items
+    fake((0, json.dumps({"playlists": [], "next_page_token": "CDIQAA"})),
+         (0, json.dumps({"items": [], "next_page_token": "CDIQAA"})))
+    with pytest.raises(RuntimeError, match="part of the list"):
+        list_playlists(None)
+    with pytest.raises(RuntimeError, match="part of the list"):
+        playlist_items("PL1", None)

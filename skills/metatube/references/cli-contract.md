@@ -53,14 +53,18 @@ commands such as `profile brand`).
 ## Playlists
 
 Verified against the installed 0.4.2 (`ytstudio playlists <cmd> --help` and the package source).
-Helper subcommands: `playlist-draft`, `playlist`, `playlist-adopt` (series only).
+Helper subcommands: `playlist-draft`, `playlist`, `playlist-adopt` (series only). `playlist` stops
+when the channel already has a playlist with the same title; `playlist --create-new` (after the owner
+says it's a different one) creates this series' own playlist anyway.
 
 - `ytstudio playlists list -n N -o json` returns `{"playlists": [{id, title, description,
   published_at, item_count, privacy, default_language, localizations}], "next_page_token",
-  "total_results"}`. `-n` defaults to 50 and pages internally. The helper reads 50.
+  "total_results"}`. `-n` defaults to 50 and pages internally. The helper passes `-n 5000` and fails closed (stops with
+  an error) if `next_page_token` is still set, so a duplicate title can't hide on a later page.
 - `ytstudio playlists items -o json -n N -- <playlist_id>` returns `{"items": [{id, video_id, title,
   position, added_at, note}], "next_page_token", "total_results"}`, in playlist order (`position`
-  is 0-based). `id` is the playlist item id, not the video id. The helper reads up to 500.
+  is 0-based). `id` is the playlist item id, not the video id. The helper passes `-n 5000` and
+  fails closed if `next_page_token` is still set (positions and adopt flags need the full list).
 - `ytstudio playlists create --title T [--description D] [--privacy private|public|unlisted]
   [--language L] [--execute]`. Dry run by default (a preview table, no API call). **Default
   privacy is `private`**, so the helper always passes `--privacy`. On success it prints
