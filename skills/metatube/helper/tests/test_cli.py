@@ -306,3 +306,15 @@ def test_quota_walker_series_skips_added_and_existing_playlist(tmp_path, capsys,
     save_manifest(s, Manifest(repo="myrepo", playlist=PlaylistRecord("t", "d", "private", id="PL1", added=["abcdefghijk"])))
     code, out = run(capsys, "quota", str(s), "--mode", "update")
     assert out["estimated_units"] == 2 * 50 + 1 * 50
+
+
+def test_quota_single_walker_source_has_no_playlist_cost(tmp_path, capsys, monkeypatch):
+    home = tmp_path / "wh"
+    monkeypatch.setenv("WALKER_HOME", str(home))
+    s = tmp_path / "myrepo" / ".walker"
+    write_p(s / "walker.yaml", "format: walker/0.2\nproject: {walked_tag: v1}\n")
+    d = home / "myrepo" / "video" / "20261027-100000"
+    write_p(d / "myrepo-v1.mp4")
+    write_p(d / "myrepo-v1.yaml", SIDECAR)
+    code, out = run(capsys, "quota", str(s), "--mode", "update")
+    assert code == 0 and out["count"] == 1 and out["estimated_units"] == 50

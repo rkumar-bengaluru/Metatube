@@ -194,12 +194,12 @@ def _possible_duplicates(plan: ytstudio.UploadPlan) -> dict:
     return {"possible_duplicates": dupes}
 
 
-def _walker_quota(a: argparse.Namespace, m: Manifest, states: list[EpisodeState]) -> int:
+def _walker_quota(a: argparse.Namespace, src: WalkerSource, m: Manifest, states: list[EpisodeState]) -> int:
     wanted = ("ready",) if a.mode == "upload" else ("ready", "live")
     eligible = [s for s in states if s.status in wanted and s.run and s.run.sidecar]
     added = set(m.playlist.added) if m.playlist else set()
-    adds = len([s for s in eligible if not (s.video_id and s.video_id in added)])
-    creates = 0 if m.playlist and m.playlist.id else 1
+    adds = 0 if src.kind == "single" else len([s for s in eligible if not (s.video_id and s.video_id in added)])
+    creates = 0 if src.kind == "single" or (m.playlist and m.playlist.id) else 1
     kinds = {"uploads": len(eligible)} if a.mode == "upload" else {"updates": len(eligible)}
     units = estimate_quota(**kinds, playlist_creates=creates, playlist_adds=adds)
     return _emit({"count": len(eligible), "playlist_creates": creates, "playlist_adds": adds,
@@ -213,7 +213,7 @@ def cmd_quota(a: argparse.Namespace) -> int:
     except _SourceError as exc:
         return _error(str(exc), exc.code)
     if walker:
-        return _walker_quota(a, walker[1], walker[2])
+        return _walker_quota(a, *walker)
     d = discover(Path(a.folder))
     if a.mode == "upload":
         count = len([v for v in d.videos if v.sidecar is not None and not v.live])
