@@ -9,6 +9,8 @@ from typing import Any
 from metatube_helper import ytstudio
 from metatube_helper.config import config_path, default_mode, load_config, save_config, set_value
 from metatube_helper.discover import discover, to_jsonable
+from metatube_helper.episodes import resolve
+from metatube_helper.manifest import load_manifest, save_manifest, sync_ids
 from metatube_helper.match import match_videos, parse_video_ref
 from metatube_helper.schema import lint
 from metatube_helper.sidecars import (
@@ -18,6 +20,7 @@ from metatube_helper.sidecars import (
     set_video_id,
     write_sidecar,
 )
+from metatube_helper.walker import detect, load_source, video_root
 from metatube_helper.ytstudio import (
     PINNED_VERSION,
     SAFE_UPLOADS_PER_DAY,
@@ -199,6 +202,52 @@ def cmd_secrets_present(a: argparse.Namespace) -> int:
     return _emit({"client_secrets_present": CLIENT_SECRETS.exists()})
 
 
+def _walker_context(a: argparse.Namespace):
+    """Load a Walker series/single source and its manifest. Returns (src, manifest, None) or (None, None, exit code)."""
+    folder = Path(a.source)
+    if not folder.is_dir():
+        return None, None, _error(f"not a folder: {folder}", 2)
+    kind = detect(folder)
+    if kind == "episode":
+        return None, None, _error(f"this is an episode; point me at the series folder: {folder.parent}", 2)
+    if kind == "plain":
+        return None, None, _error(f"not a Walker series or single-video folder: {folder}", 2)
+    m = load_manifest(folder)
+    src = load_source(folder, getattr(a, "repo", None))
+    if getattr(a, "repo", None) and m.repo != a.repo:
+        m.repo = a.repo
+        save_manifest(folder, m)
+    if src.repo_name is None:
+        src.repo_name = m.repo
+    if src.repo_name is None:
+        return None, None, _error("repo name unknown; pass --repo <name Walker uses under ~/.walker>", 1)
+    return src, m, None
+
+
+def cmd_walker_status(a: argparse.Namespace) -> int:
+    src, m, code = _walker_context(a)
+    if src is None:
+        return code
+    states = resolve(src, m)
+    base = video_root(src, "_").parents[1] if src.kind == "series" else video_root(src, None)
+    return _emit({"kind": src.kind, "title": src.title, "repo": src.repo_name, "video_root_base": base,
+                  "episodes": states, "playlist": m.playlist})
+
+
+def cmd_walker_sync(a: argparse.Namespace) -> int:
+    src, m, code = _walker_context(a)
+    if src is None:
+        return code
+    # a `disagreement` state that still has a run is the manifest-vs-sidecar clash; sync_ids reports it
+    live = {s.key: (s.run.run_id, s.run.video_id) for s in resolve(src, m)
+            if s.status in ("live", "disagreement") and s.run and s.run.video_id}
+    m2, conflicts = sync_ids(m, live)
+    if conflicts:
+        return _emit({"synced": False, "conflicts": conflicts}, 1)
+    save_manifest(Path(a.source), m2)
+    return _emit({"synced": True, "episodes": m2.episodes, "conflicts": []})
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="metatube-helper")
     sub = p.add_subparsers(dest="command", required=True)
@@ -221,6 +270,9 @@ def _parser() -> argparse.ArgumentParser:
     s = sub.add_parser("config"); cs = s.add_subparsers(dest="action", required=True)
     cs.add_parser("show").set_defaults(fn=cmd_config)
     c = cs.add_parser("set"); c.add_argument("key"); c.add_argument("value"); c.set_defaults(fn=cmd_config)
+    s = sub.add_parser("walker-status"); s.add_argument("source"); s.add_argument("--repo", default=None)
+    s.set_defaults(fn=cmd_walker_status)
+    s = sub.add_parser("walker-sync"); s.add_argument("source"); s.set_defaults(fn=cmd_walker_sync)
     s = sub.add_parser("secrets-present"); s.set_defaults(fn=cmd_secrets_present)
     return p
 

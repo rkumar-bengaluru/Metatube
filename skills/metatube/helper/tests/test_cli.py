@@ -207,3 +207,48 @@ def test_set_video_id_replace_refused_unless_confirmed_deleted(tmp_path, capsys,
     monkeypatch.setattr(cli, "video_exists", lambda vid, profile=None: exists)
     code, out = run(capsys, "set-video-id", str(tmp_path / "ep1.yaml"), "zzzzzzzzzzz", "--replace-deleted")
     assert code == 1 and load_sidecar(tmp_path / "ep1.yaml")["video_id"] == "abcdefghijk"
+
+
+def write_p(path, text=""):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _walker_series(tmp_path, under_walker=True):
+    base = tmp_path / "myrepo" / ".walker" / "series" if under_walker else tmp_path / "loose"
+    s = base / "cube"
+    write_p(s / "series.yaml", "format: walker/0.2\nseries: {name: cube-gs}\nepisodes: [ep1]\nproject: {walked_tag: v1}\n")
+    write_p(s / "ep1" / "walker.yaml", "format: walker/0.2\n")
+    return s
+
+
+def test_cli_walker_status_episode_folder_exit_2(tmp_path, capsys):
+    s = _walker_series(tmp_path)
+    code, out = run(capsys, "walker-status", str(s / "ep1"))
+    assert code == 2 and str(s) in out["error"]
+
+
+def test_cli_walker_status_unknown_repo_then_repo_flag(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("WALKER_HOME", str(tmp_path / "wh"))
+    s = _walker_series(tmp_path, under_walker=False)
+    code, out = run(capsys, "walker-status", str(s))
+    assert code == 1 and "repo name unknown" in out["error"]
+    code, out = run(capsys, "walker-status", str(s), "--repo", "myrepo")
+    assert code == 0 and out["repo"] == "myrepo" and out["episodes"][0]["status"] == "not_rendered"
+    code, out = run(capsys, "walker-status", str(s))
+    assert code == 0 and out["repo"] == "myrepo"
+
+
+def test_cli_walker_sync_copies_ids(tmp_path, capsys, monkeypatch):
+    home = tmp_path / "wh"
+    monkeypatch.setenv("WALKER_HOME", str(home))
+    s = _walker_series(tmp_path)
+    d = home / "myrepo" / "series" / "cube-gs" / "ep1" / "video" / "20261027-100000"
+    write_p(d / "cube-gs-ep1.mp4")
+    write_p(d / "cube-gs-ep1.yaml", "video_id: abcDEF12345\n")
+    code, out = run(capsys, "walker-sync", str(s))
+    assert code == 0
+    from metatube_helper.manifest import load_manifest
+
+    rec = load_manifest(s).episodes["ep1"]
+    assert rec.video_id == "abcDEF12345" and rec.run_id == "20261027-100000"

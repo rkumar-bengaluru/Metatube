@@ -58,7 +58,7 @@ _FRONTMATTER = re.compile(r"\A---\s*\n.*?\n---\s*(\n|\Z)", re.DOTALL)
 _CUE_LINE = re.compile(r"^(\d+|WEBVTT.*|[\d:.,]+\s*-->\s*[\d:.,]+.*)$")
 
 
-def _is_thin(path: Path) -> bool:
+def is_thin(path: Path) -> bool:
     """True when a source file has too little real content to write metadata from."""
     ext = path.suffix.lower()
     if ext in SLIDES_EXTS:
@@ -84,7 +84,7 @@ def discover(folder: Path) -> Discovery:
     video_paths = [p for p in children if p.suffix.lower() in SUPPORTED_VIDEO_EXTS]
     unsupported = [p for p in children if p.suffix.lower() in UNSUPPORTED_VIDEO_EXTS]
     video_stems = {p.stem for p in video_paths}
-    single_with_readme = len(video_paths) == 1 and readme is not None and not _is_thin(readme)
+    single_with_readme = len(video_paths) == 1 and readme is not None and not is_thin(readme)
 
     videos: list[VideoEntry] = []
     for path in video_paths:
@@ -112,7 +112,7 @@ def discover(folder: Path) -> Discovery:
                 thumbnail=thumbs[0] if thumbs else None,
                 folder_source=single_with_readme,
                 sidecar_error=error,
-                thin_sources=[p for p in notes + transcripts + slides if _is_thin(p)],
+                thin_sources=[p for p in notes + transcripts + slides if is_thin(p)],
             )
         )
 
