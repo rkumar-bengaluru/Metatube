@@ -238,14 +238,16 @@ def cmd_walker_sync(a: argparse.Namespace) -> int:
     src, m, code = _walker_context(a)
     if src is None:
         return code
+    states = resolve(src, m)
     # a `disagreement` state that still has a run is the manifest-vs-sidecar clash; sync_ids reports it
-    live = {s.key: (s.run.run_id, s.run.video_id) for s in resolve(src, m)
+    live = {s.key: (s.run.run_id, s.run.video_id) for s in states
             if s.status in ("live", "disagreement") and s.run and s.run.video_id}
     m2, conflicts = sync_ids(m, live)
-    if conflicts:
-        return _emit({"synced": False, "conflicts": conflicts}, 1)
+    disagreements = [{"episode": s.key, "message": s.message} for s in states if s.status == "disagreement"]
+    if conflicts or disagreements:
+        return _emit({"synced": False, "conflicts": conflicts, "disagreements": disagreements}, 1)
     save_manifest(Path(a.source), m2)
-    return _emit({"synced": True, "episodes": m2.episodes, "conflicts": []})
+    return _emit({"synced": True, "episodes": m2.episodes, "conflicts": [], "disagreements": []})
 
 
 def _parser() -> argparse.ArgumentParser:

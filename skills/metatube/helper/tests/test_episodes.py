@@ -63,6 +63,14 @@ def test_not_rendered_episode(home, series):
     assert st["ep2"].position == 2
 
 
+def test_not_rendered_when_episode_folder_missing(home, series):
+    import shutil
+
+    shutil.rmtree(series / "ep2")
+    st = states(series)
+    assert st["ep2"].status == "not_rendered" and st["ep2"].run is None and not st["ep2"].notes
+
+
 def test_ready_picks_newest_and_pin(home, series):
     run_dir(home, "ep1", "20261027-100000")
     run_dir(home, "ep1", "20261028-100000")
@@ -152,3 +160,14 @@ def test_single_source_uses_video_key(home, tmp_path):
     _write(home / "repo2" / "video" / "20261027-100000" / "repo2.mp4")
     (s,) = resolve(load_source(single), Manifest())
     assert s.key == "video" and s.position == 1 and s.status == "ready"
+
+
+def test_walker_sync_run_vs_run_disagreement_exits_1_untouched(home, series, capsys):
+    run_dir(home, "ep1", "20261027-100000", video_id="abcDEF12345")
+    run_dir(home, "ep1", "20261028-100000", video_id="zzzDEF12345")
+    run_dir(home, "ep2", "20261027-100000", video_id="qqqDEF12345")
+    save_manifest(series, Manifest(repo="myrepo"))
+    before = (series / "metatube.yaml").read_bytes()
+    assert cli.main(["walker-sync", str(series)]) == 1
+    assert "ep1" in capsys.readouterr().out
+    assert (series / "metatube.yaml").read_bytes() == before

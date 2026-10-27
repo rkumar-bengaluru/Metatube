@@ -9,11 +9,11 @@ from metatube_helper.manifest import SINGLE_KEY, EpisodeRecord, Manifest
 from metatube_helper.walker import (
     RunVideo,
     WalkerSource,
-    _read_yaml,
     choose_run,
     expected_stem,
     find_runs,
     odd_run_ids,
+    run_video,
     video_root,
 )
 
@@ -38,26 +38,6 @@ class EpisodeState:
     def has_source(self) -> bool:
         usable = [p for p in self.notes + ([self.transcript] if self.transcript else []) if p not in self.thin_sources]
         return bool(usable)
-
-
-def _explainer_run(folder: Path) -> RunVideo:
-    """A run folder holding only `explainer.mp4`, used because the owner pinned it."""
-    video = folder / "explainer.mp4"
-    srt = folder / "explainer.srt"
-    sidecar = folder / "explainer.yaml"
-    video_id = None
-    if sidecar.is_file():
-        vid = _read_yaml(sidecar).get("video_id")
-        video_id = str(vid) if vid else None
-    return RunVideo(
-        run_id=folder.name,
-        folder=folder,
-        video=video,
-        srt=srt if srt.is_file() else None,
-        sidecar=sidecar if sidecar.is_file() else None,
-        video_id=video_id,
-        mtime=video.stat().st_mtime,
-    )
 
 
 def _note_files(src: WalkerSource, key: str) -> list[Path]:
@@ -112,7 +92,7 @@ def resolve(src: WalkerSource, m: Manifest) -> list[EpisodeState]:
         cands, explainers = find_runs(video_root(src, episode), expected_stem(src, episode))
         pinned = next((f for f in explainers if rec.pin_run and f.name == rec.pin_run), None)
         if pinned:
-            cands = cands + [_explainer_run(pinned)]
+            cands = cands + [run_video(pinned, "explainer")]
         status, run, newer, video_id, message = _decide(cands, explainers, rec)
         notes = _note_files(src, key)
         transcript = run.srt if run else None

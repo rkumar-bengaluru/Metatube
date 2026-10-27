@@ -131,6 +131,26 @@ def video_root(src: WalkerSource, episode: str | None) -> Path:
     return home / "video"
 
 
+def run_video(folder: Path, stem: str) -> RunVideo:
+    """The RunVideo for `<folder>/<stem>.mp4`, with its srt, sidecar and sidecar video id."""
+    video = folder / f"{stem}.mp4"
+    srt = folder / f"{stem}.srt"
+    sidecar = folder / f"{stem}.yaml"
+    video_id = None
+    if sidecar.is_file():
+        vid = _read_yaml(sidecar).get("video_id")
+        video_id = str(vid) if vid else None
+    return RunVideo(
+        run_id=folder.name,
+        folder=folder,
+        video=video,
+        srt=srt if srt.is_file() else None,
+        sidecar=sidecar if sidecar.is_file() else None,
+        video_id=video_id,
+        mtime=video.stat().st_mtime,
+    )
+
+
 def find_runs(root: Path, stem: str) -> tuple[list[RunVideo], list[Path]]:
     """Run folders holding `<stem>.mp4`, and run folders holding only `explainer.mp4`."""
     if not root.is_dir():
@@ -138,25 +158,8 @@ def find_runs(root: Path, stem: str) -> tuple[list[RunVideo], list[Path]]:
     cands: list[RunVideo] = []
     explainers: list[Path] = []
     for run in sorted(p for p in root.iterdir() if p.is_dir()):
-        video = run / f"{stem}.mp4"
-        if video.is_file():
-            srt = run / f"{stem}.srt"
-            sidecar = run / f"{stem}.yaml"
-            video_id = None
-            if sidecar.is_file():
-                vid = _read_yaml(sidecar).get("video_id")
-                video_id = str(vid) if vid else None
-            cands.append(
-                RunVideo(
-                    run_id=run.name,
-                    folder=run,
-                    video=video,
-                    srt=srt if srt.is_file() else None,
-                    sidecar=sidecar if sidecar.is_file() else None,
-                    video_id=video_id,
-                    mtime=video.stat().st_mtime,
-                )
-            )
+        if (run / f"{stem}.mp4").is_file():
+            cands.append(run_video(run, stem))
         elif (run / "explainer.mp4").is_file():
             explainers.append(run)
     return cands, explainers
