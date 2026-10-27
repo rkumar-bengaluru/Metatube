@@ -184,3 +184,7 @@ def test_video_exists(fake, result, expected):
     f = fake(result)
     assert video_exists("abcdefghijk", None) is expected
     assert f.calls[0][0][1:] == ["videos", "show", "-o", "json", "--", "abcdefghijk"]
+
+
+def test_estimate_quota_new_kinds():
+    assert estimate_quota(playlist_creates=1, playlist_adds=3, caption_lists=2, caption_inserts=1) == 50 + 150 + 100 + 400

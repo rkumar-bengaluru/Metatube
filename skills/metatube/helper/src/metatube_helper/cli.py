@@ -9,8 +9,8 @@ from typing import Any
 from metatube_helper import ytstudio
 from metatube_helper.config import config_path, default_mode, load_config, save_config, set_value
 from metatube_helper.discover import discover, to_jsonable
-from metatube_helper.episodes import resolve
-from metatube_helper.manifest import load_manifest, save_manifest, sync_ids
+from metatube_helper.episodes import EpisodeState, resolve, walker_entries
+from metatube_helper.manifest import Manifest, load_manifest, save_manifest, sync_ids
 from metatube_helper.match import match_videos, parse_video_ref
 from metatube_helper.schema import lint
 from metatube_helper.sidecars import (
@@ -20,7 +20,7 @@ from metatube_helper.sidecars import (
     set_video_id,
     write_sidecar,
 )
-from metatube_helper.walker import detect, load_source, video_root
+from metatube_helper.walker import WalkerSource, detect, load_source, video_root
 from metatube_helper.ytstudio import (
     PINNED_VERSION,
     SAFE_UPLOADS_PER_DAY,
@@ -81,12 +81,32 @@ def cmd_auth_check(a: argparse.Namespace) -> int:
 
 
 def cmd_match(a: argparse.Namespace) -> int:
-    d = discover(Path(a.folder))
+    try:
+        walker = _walker_states(Path(a.folder))
+    except _SourceError as exc:
+        return _error(str(exc), exc.code)
+    videos = walker_entries(walker[2]) if walker else discover(Path(a.folder)).videos
     try:
         channel = list_channel_videos(_profile(), limit=a.limit)
     except RuntimeError as exc:
         return _error(str(exc))
-    return _emit({"matches": match_videos(d.videos, channel)})
+    return _emit({"matches": match_videos(videos, channel)})
+
+
+def _source_holders(folder: Path, sidecar: Path, video_id: str) -> list[str]:
+    """Episodes of a Walker source, other than the one owning `sidecar`, that already hold `video_id`."""
+    walker = _walker_states(folder)
+    if walker is None:
+        raise _SourceError(f"not a Walker series or single-video folder: {folder}", 2)
+    _, m, states = walker
+    holders = []
+    for st in states:
+        if st.run and st.run.video.with_suffix(".yaml") == sidecar:
+            continue
+        rec = m.episodes.get(st.key)
+        if (st.run and st.run.video_id == video_id) or (rec and rec.video_id == video_id):
+            holders.append(st.key)
+    return holders
 
 
 def cmd_set_video_id(a: argparse.Namespace) -> int:
@@ -95,6 +115,8 @@ def cmd_set_video_id(a: argparse.Namespace) -> int:
         video_id = parse_video_ref(a.ref)
         holders = [v.stem for v in discover(sidecar.parent).videos
                    if v.video_id == video_id and v.sidecar != sidecar]
+        if a.source:
+            holders += _source_holders(Path(a.source), sidecar, video_id)
         if holders:
             return _error(f"video {video_id} is already assigned to {', '.join(holders)}")
         old = load_sidecar(sidecar).get("video_id")
@@ -106,6 +128,8 @@ def cmd_set_video_id(a: argparse.Namespace) -> int:
             replace_video_id(sidecar, video_id, expected_old=old)
         else:
             set_video_id(sidecar, video_id)
+    except _SourceError as exc:
+        return _error(str(exc), exc.code)
     except (ValueError, LiveSidecarError) as exc:
         return _error(str(exc))
     return _emit({"sidecar": a.sidecar, "video_id": video_id})
@@ -170,7 +194,26 @@ def _possible_duplicates(plan: ytstudio.UploadPlan) -> dict:
     return {"possible_duplicates": dupes}
 
 
+def _walker_quota(a: argparse.Namespace, m: Manifest, states: list[EpisodeState]) -> int:
+    wanted = ("ready",) if a.mode == "upload" else ("ready", "live")
+    eligible = [s for s in states if s.status in wanted and s.run and s.run.sidecar]
+    added = set(m.playlist.added) if m.playlist else set()
+    adds = len([s for s in eligible if not (s.video_id and s.video_id in added)])
+    creates = 0 if m.playlist and m.playlist.id else 1
+    kinds = {"uploads": len(eligible)} if a.mode == "upload" else {"updates": len(eligible)}
+    units = estimate_quota(**kinds, playlist_creates=creates, playlist_adds=adds)
+    return _emit({"count": len(eligible), "playlist_creates": creates, "playlist_adds": adds,
+                  "estimated_units": units, "daily_quota": ytstudio.DAILY_QUOTA,
+                  "over_safe_daily": a.mode == "upload" and len(eligible) > SAFE_UPLOADS_PER_DAY})
+
+
 def cmd_quota(a: argparse.Namespace) -> int:
+    try:
+        walker = _walker_states(Path(a.folder))
+    except _SourceError as exc:
+        return _error(str(exc), exc.code)
+    if walker:
+        return _walker_quota(a, walker[1], walker[2])
     d = discover(Path(a.folder))
     if a.mode == "upload":
         count = len([v for v in d.videos if v.sidecar is not None and not v.live])
@@ -202,25 +245,47 @@ def cmd_secrets_present(a: argparse.Namespace) -> int:
     return _emit({"client_secrets_present": CLIENT_SECRETS.exists()})
 
 
-def _walker_context(a: argparse.Namespace):
-    """Load a Walker series/single source and its manifest. Returns (src, manifest, None) or (None, None, exit code)."""
-    folder = Path(a.source)
+class _SourceError(Exception):
+    def __init__(self, message: str, code: int):
+        super().__init__(message)
+        self.code = code
+
+
+def _load_walker(folder: Path, repo: str | None = None) -> tuple[WalkerSource, Manifest]:
+    """Load a Walker series/single source and its manifest, or raise _SourceError."""
     if not folder.is_dir():
-        return None, None, _error(f"not a folder: {folder}", 2)
+        raise _SourceError(f"not a folder: {folder}", 2)
     kind = detect(folder)
     if kind == "episode":
-        return None, None, _error(f"this is an episode; point me at the series folder: {folder.parent}", 2)
+        raise _SourceError(f"this is an episode; point me at the series folder: {folder.parent}", 2)
     if kind == "plain":
-        return None, None, _error(f"not a Walker series or single-video folder: {folder}", 2)
+        raise _SourceError(f"not a Walker series or single-video folder: {folder}", 2)
     m = load_manifest(folder)
-    src = load_source(folder, getattr(a, "repo", None))
-    if getattr(a, "repo", None) and m.repo != a.repo:
-        m.repo = a.repo
+    src = load_source(folder, repo)
+    if repo and m.repo != repo:
+        m.repo = repo
         save_manifest(folder, m)
     if src.repo_name is None:
         src.repo_name = m.repo
     if src.repo_name is None:
-        return None, None, _error("repo name unknown; pass --repo <name Walker uses under ~/.walker>", 1)
+        raise _SourceError("repo name unknown; pass --repo <name Walker uses under ~/.walker>", 1)
+    return src, m
+
+
+def _walker_states(folder: Path) -> tuple[WalkerSource, Manifest, list[EpisodeState]] | None:
+    """Resolve a Walker source for the v1 subcommands; None for a plain folder. Raises _SourceError."""
+    if folder.is_dir() and detect(folder) == "plain":
+        return None
+    src, m = _load_walker(folder)
+    return src, m, resolve(src, m)
+
+
+def _walker_context(a: argparse.Namespace):
+    """Returns (src, manifest, None) or (None, None, exit code)."""
+    try:
+        src, m = _load_walker(Path(a.source), getattr(a, "repo", None))
+    except _SourceError as exc:
+        return None, None, _error(str(exc), exc.code)
     return src, m, None
 
 
@@ -260,7 +325,8 @@ def _parser() -> argparse.ArgumentParser:
     s = sub.add_parser("match"); s.add_argument("folder"); s.add_argument("--limit", type=int, default=50)
     s.set_defaults(fn=cmd_match)
     s = sub.add_parser("set-video-id"); s.add_argument("sidecar"); s.add_argument("ref")
-    s.add_argument("--replace-deleted", action="store_true"); s.set_defaults(fn=cmd_set_video_id)
+    s.add_argument("--replace-deleted", action="store_true"); s.add_argument("--source", default=None)
+    s.set_defaults(fn=cmd_set_video_id)
     s = sub.add_parser("write-sidecar"); s.add_argument("sidecar")
     s.add_argument("--from", dest="draft", required=True); s.set_defaults(fn=cmd_write_sidecar)
     s = sub.add_parser("update"); s.add_argument("sidecar"); s.add_argument("--execute", action="store_true")

@@ -15,6 +15,10 @@ from metatube_helper.match import ChannelVideo
 PINNED_VERSION = "0.4.2"
 QUOTA_UPLOAD = 1600
 QUOTA_UPDATE = 50
+QUOTA_PLAYLIST_CREATE = 50
+QUOTA_PLAYLIST_ADD = 50
+QUOTA_CAPTION_LIST = 50
+QUOTA_CAPTION_INSERT = 400
 DAILY_QUOTA = 10000
 SAFE_UPLOADS_PER_DAY = 6
 
@@ -153,5 +157,19 @@ def run_upload(plan: UploadPlan, execute: bool, profile: str | None) -> list[Run
     return results
 
 
-def estimate_quota(uploads: int = 0, updates: int = 0) -> int:
-    return uploads * QUOTA_UPLOAD + updates * QUOTA_UPDATE
+def estimate_quota(
+    uploads: int = 0,
+    updates: int = 0,
+    playlist_creates: int = 0,
+    playlist_adds: int = 0,
+    caption_lists: int = 0,
+    caption_inserts: int = 0,
+) -> int:
+    return (
+        uploads * QUOTA_UPLOAD
+        + updates * QUOTA_UPDATE
+        + playlist_creates * QUOTA_PLAYLIST_CREATE
+        + playlist_adds * QUOTA_PLAYLIST_ADD
+        + caption_lists * QUOTA_CAPTION_LIST
+        + caption_inserts * QUOTA_CAPTION_INSERT
+    )

@@ -252,3 +252,57 @@ def test_cli_walker_sync_copies_ids(tmp_path, capsys, monkeypatch):
 
     rec = load_manifest(s).episodes["ep1"]
     assert rec.video_id == "abcDEF12345" and rec.run_id == "20261027-100000"
+
+
+WALKER_SERIES = "format: walker/0.2\nseries: {name: cube-gs}\nepisodes: [ep1, ep2]\nproject: {walked_tag: v1}\n"
+
+
+def _rendered_series(tmp_path, monkeypatch, ids=(None, None)):
+    """A Walker series with two rendered episodes, each with a sidecar. Returns (series folder, run folders)."""
+    home = tmp_path / "wh"
+    monkeypatch.setenv("WALKER_HOME", str(home))
+    s = tmp_path / "myrepo" / ".walker" / "series" / "cube"
+    write_p(s / "series.yaml", WALKER_SERIES)
+    runs = []
+    for ep, vid in zip(("ep1", "ep2"), ids):
+        write_p(s / ep / "walker.yaml", "format: walker/0.2\n")
+        d = home / "myrepo" / "series" / "cube-gs" / ep / "video" / "20261027-100000"
+        write_p(d / f"cube-gs-{ep}.mp4")
+        write_p(d / f"cube-gs-{ep}.yaml", SIDECAR + (f"video_id: {vid}\n" if vid else ""))
+        runs.append(d)
+    return s, runs
+
+
+def test_match_walker_series(tmp_path, capsys, monkeypatch):
+    from metatube_helper.match import ChannelVideo
+    s, _ = _rendered_series(tmp_path, monkeypatch)
+    vids = [ChannelVideo("aaaaaaaaaaa", "cube gs ep1", "private", "2026-10-27"),
+            ChannelVideo("bbbbbbbbbbb", "cube-gs-ep2", "private", "2026-10-27")]
+    monkeypatch.setattr(cli, "list_channel_videos", lambda profile, limit=50: vids)
+    code, out = run(capsys, "match", str(s))
+    assert code == 0
+    assert [m["status"] for m in out["matches"]] == ["matched", "matched"]
+
+
+def test_set_video_id_source_refuses_id_held_by_other_episode(tmp_path, capsys, monkeypatch):
+    s, runs = _rendered_series(tmp_path, monkeypatch, ids=("abcdefghijk", None))
+    target = runs[1] / "cube-gs-ep2.yaml"
+    code, out = run(capsys, "set-video-id", str(target), "abcdefghijk", "--source", str(s))
+    assert code == 1 and "ep1" in out["error"]
+    assert "video_id" not in load_sidecar(target)
+    code, out = run(capsys, "set-video-id", str(target), "zzzzzzzzzzz", "--source", str(s))
+    assert code == 0 and load_sidecar(target)["video_id"] == "zzzzzzzzzzz"
+
+
+def test_quota_walker_series_counts_playlist(tmp_path, capsys, monkeypatch):
+    s, _ = _rendered_series(tmp_path, monkeypatch)
+    code, out = run(capsys, "quota", str(s), "--mode", "update")
+    assert code == 0 and out["count"] == 2 and out["estimated_units"] == 2 * 50 + 50 + 2 * 50
+
+
+def test_quota_walker_series_skips_added_and_existing_playlist(tmp_path, capsys, monkeypatch):
+    from metatube_helper.manifest import Manifest, PlaylistRecord, save_manifest
+    s, _ = _rendered_series(tmp_path, monkeypatch, ids=("abcdefghijk", "lmnopqrstuv"))
+    save_manifest(s, Manifest(repo="myrepo", playlist=PlaylistRecord("t", "d", "private", id="PL1", added=["abcdefghijk"])))
+    code, out = run(capsys, "quota", str(s), "--mode", "update")
+    assert out["estimated_units"] == 2 * 50 + 1 * 50
