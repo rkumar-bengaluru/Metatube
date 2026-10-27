@@ -97,11 +97,20 @@ treat it as a single video.
 
 ### 2. Finding the video
 
-For each episode (series) or the one video (single), MetaTube looks in Walker's home for the **newest
-`video/<run id>/` folder that holds a video file**, by sorting run ids. The video is the one `.mp4` there whose
-stem is the expected name (`<name>-<episode>`, or `<repo>-<tag>` / `<repo>`). If only `explainer.mp4` is there,
-use it, but warn: its Studio title will be `explainer`, which `match` can't tell apart between episodes, so the
-owner should re-render or give the video id by hand.
+For each episode (series) or the one video (single), MetaTube looks under Walker's home `video/` folder:
+
+1. **Candidates** are the run folders that hold a video with the **expected stem** (`<name>-<episode>`, or
+   `<repo>-<tag>` / `<repo>`, sanitised as Walker does). Folders without it (other files, odd names, failed
+   renders) are ignored, so the choice doesn't depend on the run id format.
+2. One candidate → that's the run. Several → the newest: by run id when every candidate's name is Walker's
+   timestamp form (`YYYYMMDD-HHMMSS`), otherwise by the video file's modification time.
+3. The chosen run (id and video path) is always shown in the generate table, so the owner sees it before
+   anything is drafted.
+
+**`explainer.mp4` is a hard stop.** Renders made before Walker `c8aeafa` are all named `explainer`, so Studio
+titles them all `explainer` and `match` can't tell episodes apart. Such a run is never a candidate on its own:
+MetaTube reports it and drafts that episode only if the owner either re-renders it or gives its video id (or
+URL) by hand, which is recorded with `set-video-id`.
 
 `<repo>` is the name Walker uses for its home folder. For `<repo>/.walker/...` it is the repo folder's name. For
 a source folder outside the clone the builder must check how Walker names the home (`Workspace` in Walker's
@@ -110,7 +119,7 @@ the answer in the manifest (§4).
 
 An episode with no rendered video yet is reported as `not rendered` and skipped. It isn't an error.
 
-This "newest wins" rule applies only to videos not yet on YouTube; a live video stays tied to its live run (§5).
+This choice applies only to videos not yet on YouTube; a live video stays tied to its live run (§5).
 The owner can pin an episode to a specific run in the manifest.
 
 ### 3. Sources for the draft
@@ -132,9 +141,12 @@ Single Walker video: its `story.md`, `screenplay.md`, `walker.yaml` `project`, a
 - **Manifest**: `metatube.yaml` in the Walker source folder (series folder or single Walker folder), so it
   survives re-renders and can be committed. It records, per episode: the run id used, the sidecar path, the
   `video_id`, and whether the blank caption is done; for a series also the playlist id, title and description,
-  and which videos have been added. The exact shape is the builder's. The `video_id` in the sidecar stays the one
-  ytstudio and v1 read; the manifest mirrors it so a new run folder can get it back. If the two ever disagree,
-  stop and ask; never overwrite either silently.
+  and which videos have been added. The exact shape is the builder's.
+- **Which one wins**: the sidecar is the source of truth for the `video_id`, because ytstudio and v1's
+  `update`/`set-video-id` read it. The manifest is MetaTube's bookkeeping: it copies the id from the sidecar,
+  never the other way. MetaTube never writes a manifest id into a sidecar. If the two disagree, stop, show both,
+  and ask; the only fix MetaTube offers is updating the manifest from the sidecar. Changing a sidecar's id stays
+  with v1's `set-video-id` rules (`--replace-deleted` only).
 
 ### 5. Re-renders
 
@@ -146,7 +158,7 @@ The owner confirmed: once a video is on YouTube, the old cut always stays there.
   ("ep2 has a newer render, not on YouTube; metadata stays tied to the live run") and otherwise ignored.
   The owner can still ask to regenerate the draft, for example when `story.md` or `screenplay.md` changed.
   Publishing then only runs `update`. Never upload.
-- **Not live yet**: newest run wins (§2), and it's treated as a new video (draft, review, write sidecar).
+- **Not live yet**: the run chosen by §2, and it's treated as a new video (draft, review, write sidecar).
 - **Live run folder missing** (the owner deleted Walker's home): the manifest still has the `video_id`. Report
   it, and don't redraft that episode until the owner points at a folder or says to draft without chapters.
 
@@ -158,8 +170,11 @@ The owner confirmed: once a video is on YouTube, the old cut always stays there.
   Note: while uploads are hand-made, the episodes' own privacy is whatever the owner set in Studio.
 - Created once. The manifest's playlist id is the only playlist MetaTube ever adds to. If the manifest has no id
   but the channel already has a playlist with the same title (`ytstudio playlists list`), stop and ask whether
-  it's this series' playlist (then record it) or a different one (then create a new one). This guards against
-  duplicates after a lost manifest.
+  it's this series' playlist or a different one. This guards against duplicates after a lost manifest.
+  Before recording it as this series' playlist, list its items (`ytstudio playlists items`) and show them next to
+  the series' episodes. Flag every item that isn't one of this series' known `video_id`s or whose title doesn't
+  carry the series title. If any are flagged, ask again with that list in view. "Different one" → create a new
+  playlist.
 - Episodes are added in `series.yaml` order once they have a `video_id`. An episode published later is inserted
   at its series position, so the playlist order always matches `episodes`. Videos already in the playlist
   (`ytstudio playlists items`) are not added again.
@@ -187,11 +202,19 @@ The owner confirmed: once a video is on YouTube, the old cut always stays there.
   contract.
 - Dry run by default: show which videos would get the track and which are skipped (and why); `--execute` only
   after the owner's yes.
-- Setting: `blank_captions` in config, on by default for Walker sources (their captions are always burned in),
-  off for plain folders unless the owner turns it on.
-- **Spike first**, before building: on one test video, check that `captions.insert` with that one-cue file
-  works with the existing `youtube.force-ssl` scope, and that the watch page then shows no automatic captions
-  with CC on. If either fails, come back to the owner before going further.
+- Setting: `blank_captions` is stored in MetaTube's config (`config set blank_captions walker|always|never`),
+  not just inferred, so the owner can turn it off for good. Default `walker`: on for Walker sources (their
+  captions are always burned in), off for plain folders. `config show` and `/metatube:setup` show it.
+- **The spike is blocking for this section.** Before any of §7 is built, on one test video, prove both:
+  1. `captions.insert` with the one-cue file succeeds with the scopes ytstudio already asks for
+     (`youtube.force-ssl`), with no new consent; and
+  2. the watch page then shows only the burned-in text with CC on, i.e. the `.` track replaces the automatic
+     one.
+
+  If (1) needs a scope ytstudio doesn't request, the captions feature is blocked: MetaTube can't change
+  ytstudio's scopes, and the owner would have to re-consent through some other route. If (2) fails, the
+  approach is wrong. Either way, stop and come back to the owner. §1–§6 don't depend on the spike and can be
+  built and shipped without §7.
 
 ### 8. Quota (approximate, per the YouTube API's published costs)
 
@@ -201,8 +224,8 @@ The owner confirmed: once a video is on YouTube, the old cut always stays there.
 
 ## Workflow changes (SKILL.md)
 
-- **generate**: Walker folder detected → show the episode table (episode, newest run, video found / not
-  rendered, `video_id` from the manifest) → drafts for episodes that need one, plus the playlist draft → one
+- **generate**: Walker folder detected → show the episode table (episode, chosen run and video path, or
+  not rendered / `explainer` stop, live run and `video_id` for live episodes, newer render not on YouTube) → drafts for episodes that need one, plus the playlist draft → one
   review gate → write sidecars and the manifest.
 - **publish (update mode)**: `match` as today for episodes without a `video_id` (Studio title = Walker's file
   stem) → metadata update → playlist → blank captions, each with dry run and yes. Report what's done per episode
@@ -211,12 +234,16 @@ The owner confirmed: once a video is on YouTube, the old cut always stays there.
 
 ## Testing
 
-- Unit tests with a fake Walker home in `tmp_path`: series and single layouts, newest-run choice, pinned run,
-  not-rendered episode, `explainer.mp4` fallback, stem sanitising, re-render carry-over, manifest/sidecar
+- Unit tests with a fake Walker home in `tmp_path`: series and single layouts, run choice (expected stem,
+  timestamp ids, non-timestamp ids by mtime, stray folders), pinned run, not-rendered episode, `explainer.mp4`
+  hard stop, stem sanitising, re-render carry-over, manifest/sidecar
   disagreement.
-- Playlist logic with ytstudio calls faked: create once, reuse from manifest, same-title prompt, order and
+- Playlist logic with ytstudio calls faked: create once, reuse from manifest, same-title prompt with unrelated
+  items flagged, order and
   insert positions, no duplicates.
-- Captions: skip when a manual track exists, dry-run output, the one-cue SRT content.
+- Captions (after the spike passes): skip when a manual track exists, dry-run output, the one-cue SRT content,
+  the `walker|always|never` setting.
+- Manifest/sidecar: disagreement stops, the manifest never writes a sidecar id.
 - An `examples/walker-series/` fixture (source side plus a fake home with empty `.mp4` files), like v1's examples.
 
 ## Left to the builder
