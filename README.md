@@ -97,7 +97,7 @@ Google's guide: [Quota and Compliance Audits](https://developers.google.com/yout
 | Requirement | Notes |
 | --- | --- |
 | **Claude Code** | With plugin support. |
-| **Python ≥ 3.12** and **uv** | `ytstudio-cli` is a Python tool, installed with `uv tool install`. |
+| **Python ≥ 3.12** and **uv** | `ytstudio-cli` is installed with `uv tool install`, and MetaTube's helper (`skills/metatube/helper`) runs with `uv run`. |
 | **`ytstudio-cli` 0.4.2** | Pinned. `/metatube:setup` offers to install it. |
 | **Google Cloud project** | **YouTube Data API v3** enabled. Setup also enables the **YouTube Analytics API** (ytstudio requests analytics scopes). |
 | **gcloud** (optional) | Used only to check/enable the APIs. |
@@ -112,16 +112,15 @@ Google's guide: [Quota and Compliance Audits](https://developers.google.com/yout
 
 ## Install
 
-```bash
-git clone https://github.com/rkumar-bengaluru/Metatube.git
-```
-
-Then in Claude Code:
+In Claude Code:
 
 ```
-/plugin marketplace add ./Metatube
-/plugin install metatube
+/plugin marketplace add rkumar-bengaluru/Metatube
+/plugin install metatube@metatube
 ```
+
+Or from a local clone: `/plugin marketplace add ./Metatube`, then the same install line.
+Then run `/metatube:setup`.
 
 ---
 
