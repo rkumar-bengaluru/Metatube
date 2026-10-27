@@ -69,7 +69,8 @@ the bookkeeping across episodes.
   - `video_root(src: WalkerSource, episode: str | None) -> Path` — series: `walker_home()/repo_name/"series"/series_name/episode/"video"`; single: `walker_home()/repo_name/"video"`. Raises `ValueError("repo name unknown")` when `repo_name` is None.
   - `@dataclass RunVideo: run_id: str; folder: Path; video: Path; srt: Path | None; sidecar: Path | None; video_id: str | None; mtime: float`
   - `find_runs(root: Path, stem: str) -> tuple[list[RunVideo], list[Path]]` — run folders with `<stem>.mp4` (candidates, `video_id` read from `<stem>.yaml` if present) and the run folders holding only `explainer.mp4`. A missing `root` gives `([], [])`.
-  - `choose_run(cands: list[RunVideo]) -> RunVideo | None` — newest by `run_id` when every `run_id` matches `RUN_ID`, else by `mtime`.
+  - `choose_run(cands: list[RunVideo]) -> RunVideo | None` — newest by `run_id` when every `run_id` matches `RUN_ID`, else by `mtime`. The mtime fallback is best-effort (copies and syncs change mtimes); say so in the docstring.
+  - `odd_run_ids(cands: list[RunVideo]) -> list[str]` — candidate run ids not matching `RUN_ID` (Task 3 turns them into a warning).
 
 - [ ] **Step 1: Write the failing tests** in `tests/test_walker.py`, building a fake Walker home under `tmp_path` with `monkeypatch.setenv("WALKER_HOME", ...)` and a source tree like `examples/cube/series` (`series.yaml` with `format: walker/0.2`, `series: {name: cube-gs, title: "Cube: getting started"}`, `episodes: [ep1, ep2]`):
   - `test_detect_kinds`: series folder → `"series"`; `ep1/` (with `walker.yaml`) → `"episode"`; `repo/.walker/` with `walker.yaml` → `"single"`; folder with only `a.mp4` → `"plain"`.
@@ -79,7 +80,7 @@ the bookkeeping across episodes.
   - `test_walker_home_order`: `WALKER_HOME` wins; without it, `home:` in `~/.walker/config.yaml` (use `monkeypatch.setenv("HOME"/"USERPROFILE")`); else `~/.walker`.
   - `test_find_runs_ignores_stray_and_explainer`: runs `20261027-100000/cube-gs-ep1.mp4`, `20261027-110000/explainer.mp4`, `notes/readme.txt` → one candidate, one explainer folder.
   - `test_choose_run_timestamp_ids`: `20261027-100000` and `20261028-090000` → the second, even if its mtime is older.
-  - `test_choose_run_falls_back_to_mtime`: ids `a` and `b` → the newer mtime.
+  - `test_choose_run_falls_back_to_mtime`: ids `a` and `b` → the newer mtime; `odd_run_ids` → `["a", "b"]`.
 - [ ] **Step 2: Run** `uv run pytest tests/test_walker.py -q` — Expected: FAIL (`ModuleNotFoundError: metatube_helper.walker`).
 - [ ] **Step 3: Implement `walker.py`** with the signatures above. Read YAML with `YAML(typ="safe")`, UTF-8.
 - [ ] **Step 4: Run** `uv run pytest -q` — Expected: all pass.
@@ -130,9 +131,9 @@ the bookkeeping across episodes.
     2. Manifest has a `video_id` but no run carries it → `live_run_missing`.
     3. Manifest `video_id` ≠ the live run's sidecar id → `disagreement`.
     4. Not live: `pin_run` if set and present, else `choose_run(cands)` → `ready`; no candidate but explainer folders → `explainer_only` (message tells the owner to re-render or give the video id); nothing → `not_rendered`.
-  - Notes: episode `story.md`, `screenplay.md`, plus the series `story.md` (series only); single: `story.md`, `screenplay.md`. `transcript` = the run's `srt`. `thin_sources` via `discover.is_thin`.
+  - Notes: episode `story.md`, `screenplay.md`, plus the series `story.md` (series only, and it counts toward `has_source` for every episode); single: `story.md`, `screenplay.md`. `transcript` = the run's `srt`. `thin_sources` via `discover.is_thin`, the same thresholds as v1 (notes under 20 words after frontmatter, transcripts under 3 words).
   - `walker_entries(states: list[EpisodeState]) -> list[VideoEntry]` — `discover(state.run.folder)` entry for every state with a `run`.
-  - CLI `walker-status SOURCE [--repo NAME]`: `detect` → `episode` → `_error("this is an episode; point me at the series folder: <parent>", 2)`; `plain` → `_error(..., 2)`. `--repo` saves `Manifest.repo`. `repo_name` = argument, else path rule, else `Manifest.repo`; still `None` → `_error("repo name unknown; pass --repo <name Walker uses under ~/.walker>", 1)`. Prints `{"kind", "title", "repo", "video_root_base", "episodes": [EpisodeState...], "playlist": ...}`.
+  - CLI `walker-status SOURCE [--repo NAME]`: `detect` → `episode` → `_error("this is an episode; point me at the series folder: <parent>", 2)`; `plain` → `_error(..., 2)`. `--repo` saves `Manifest.repo` at once; once saved it is used on every later run and never asked again (the owner clears it by editing `metatube.yaml`). `repo_name` = argument, else path rule, else `Manifest.repo`; still `None` → `_error("repo name unknown; pass --repo <name Walker uses under ~/.walker>", 1)`. Prints `{"kind", "title", "repo", "video_root_base", "episodes": [EpisodeState...], "playlist": ...}`.
   - CLI `walker-sync SOURCE`: `sync_ids` from the `live` states, saves; exit 1 with `conflicts` if any.
 
 - [ ] **Step 1: Write the failing tests** (fake home + source as Task 1):
@@ -144,6 +145,8 @@ the bookkeeping across episodes.
   - `test_manifest_disagrees_with_sidecar`: → `disagreement`, manifest untouched after `walker-sync` exits 1.
   - `test_live_run_missing`: manifest id, no runs → `live_run_missing`.
   - `test_explainer_only`.
+  - `test_series_story_counts_for_every_episode`: episode with no `story.md`/`screenplay.md`, series `story.md` of 30 words → `has_source`; series `story.md` of 5 words only → not `has_source`, listed in `thin_sources`.
+  - `test_odd_run_ids_warn`: runs `a`, `b` → state `warnings` mentions both.
   - `test_cli_walker_status_episode_folder_exit_2`, `test_cli_walker_status_unknown_repo_then_repo_flag` (second call without `--repo` reads it from the manifest), `test_cli_walker_sync_copies_ids`.
 - [ ] **Step 2: Run** `uv run pytest tests/test_episodes.py tests/test_cli.py -q` — Expected: new tests FAIL.
 - [ ] **Step 3: Implement** `episodes.py`, the rename in `discover.py`, and both subcommands in `cli.py` (`_parser`).
@@ -197,7 +200,9 @@ the bookkeeping across episodes.
   - `playlist SOURCE [--execute]`:
     - No `playlist` in manifest → `_error("no playlist draft; run generate")`.
     - No `id` → `list_playlists`; same title (casefolded, stripped) → exit 1 with `{"collision": [{id, title, items, flagged}]}`, nothing created. Otherwise dry run shows the create argv; `--execute` runs it, `parse_created_id`, saves the id **before** adding.
-    - Then `plan_adds`; dry run lists them; `--execute` runs each `add_argv`, then re-reads `playlist_items` and records in `added` only ids actually present; any not present → `not_added` in the output, exit 1.
+    - Then `plan_adds`; dry run lists them; `--execute` runs each `add_argv`, then re-reads `playlist_items` and records in `added` only ids actually present; any not present → `not_added` in the output, exit 1. Each
+      `not_added` entry carries `{episode, video_id, position, argv, returncode, stdout, stderr}` from its add
+      command, verbatim, for debugging.
   - `playlist-adopt SOURCE PLAYLIST_ID` — prints the items and `flagged`; with `--confirm`, saves the id to the manifest (the skill only passes `--confirm` after the owner's yes with the flagged list in view).
 - `cli-contract.md`: document `list -o json`, `items -o json`, `create` output `Created: <title> (<id>)` (no JSON, default privacy private), `add` (50 units per video, prints `Done: N added, M failed` and exits 0 even when some failed), verified against installed 0.4.2.
 
@@ -228,12 +233,14 @@ the bookkeeping across episodes.
   1. `list <id>` (50 units)
   2. `insert <id> --language en` (400 units)
 
-  Pass when both of these hold:
+  Pass when all of these hold:
   - (a) the insert succeeds without a new consent screen;
-  - (b) the owner opens the watch page with CC on and sees no automatic captions, only the burned-in text.
+  - (b) the owner opens the watch page with CC on and sees no automatic captions, only the burned-in text;
+  - (c) in Studio → Subtitles the inserted track is listed and selectable, and is not marked "Automatic"
+    (this catches the API accepting the track while YouTube still prefers the automatic one).
 
   Record the result in the spec's §7, then commit `docs: captions spike result`.
-- [ ] **Step 7: Gate.** If (a) or (b) failed, **stop here**: report to the owner and skip Task 7. Task 8 still runs, without the captions parts.
+- [ ] **Step 7: Gate.** If (a), (b) or (c) failed, **stop here**: report to the owner and skip Task 7. Task 8 still runs, without the captions parts.
 
 ### Task 7: Blank captions (only after the Task 6 spike passed)
 
@@ -278,7 +285,9 @@ the bookkeeping across episodes.
     - then `update` per live sidecar, then `playlist`, then `captions`
     - each step dry run first and asks for a yes
     - a `collision` goes to `playlist-adopt`, and its `--confirm` is passed only after the owner's yes
-    - the playlist draft's privacy defaults to config `defaults.privacy`
+    - the playlist draft's privacy defaults to config `defaults.privacy`, the same default the video sidecars
+      use, and is shown with the title and description in the review gate
+    - `walker-status` warnings (odd run ids) are shown in the episode table
     - upload mode: `upload <run folder>` for each `ready` episode with a sidecar, never for `live` ones; then
       `walker-sync`, `playlist` and `captions`, as in update mode
   - Guardrails:
