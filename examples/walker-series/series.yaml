@@ -1,0 +1,13 @@
+# A two-episode Walker series about the fictional tinyqueue repo. MetaTube reads this source folder and finds
+# each episode's rendered video in Walker's home (here the fake `_home/`, with WALKER_HOME pointed at it).
+format: walker/0.2
+series:
+  name: demo
+  title: "tinyqueue Tour"
+episodes: [ep1-intro, ep2-usage]
+
+project:
+  name: tinyqueue
+  audience: "Python developers who want a small background job queue without running Redis."
+  repo_url: https://github.com/example/tinyqueue
+  walked_tag: v0.3.0

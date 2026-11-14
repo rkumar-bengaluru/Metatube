@@ -43,3 +43,12 @@ default_audio_language: en
 
 In update mode only `title`, `description` and `tags` are applied; the other fields tell the
 user what to set in Studio.
+
+## Not a sidecar: `metatube.yaml`
+
+A Walker source folder also holds `metatube.yaml`, MetaTube's bookkeeping for the series or single Walker
+video: the repo name under Walker's home, per-episode `run_id`, `pin_run` and `video_id`, and for a series
+the `playlist` (title, description, privacy, id, and the video ids added). It is written by the helper
+(`walker-status --repo`, `walker-sync`, `playlist-draft`, `playlist`, `playlist-adopt`); the one field the
+owner sets by hand is `pin_run`. None of its keys go into a sidecar. The sidecar is the source of truth for a video's
+`video_id`; `metatube.yaml` only copies it.

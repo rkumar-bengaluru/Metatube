@@ -1,0 +1,27 @@
+title: "tinyqueue Tour Ep. 2: Retries, Scheduled Jobs and Many Workers"
+description: |
+  Make tinyqueue jobs retry with backoff, schedule them for later with run_at, and run several workers on one SQLite file — each job runs exactly once.
+
+  We make a job fail on purpose and watch the attempts climb, schedule a job five minutes ahead, then start three workers against the same database and count which one ran each job. For Python developers going beyond a first job with tinyqueue.
+
+  00:00 Retries and backoff
+  01:05 Scheduling with run_at
+  02:10 Several workers, one database
+
+  Repo: https://github.com/example/tinyqueue (v0.3.0)
+
+  #Python #SQLite #GitHub
+tags:
+  - tinyqueue
+  - tinyqueue retries
+  - tinyqueue run_at
+  - python job retries
+  - python scheduled jobs
+  - sqlite job queue
+  - multiple workers sqlite
+  - python background jobs
+category_id: "28"
+privacy: public
+made_for_kids: false
+default_language: en
+default_audio_language: en

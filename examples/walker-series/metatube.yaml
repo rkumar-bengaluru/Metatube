@@ -1,0 +1,13 @@
+# MetaTube's bookkeeping for this series, written by the helper (playlist-draft, walker-sync); not a sidecar.
+repo: myrepo
+episodes: {}
+playlist:
+  title: "tinyqueue Tour"
+  description: |-
+    A short series for Python developers who want background jobs without running Redis: tinyqueue keeps its
+    jobs in one SQLite file. Install it and run a first job, then retries, scheduled jobs and several workers.
+
+    Repo: https://github.com/example/tinyqueue
+  privacy: public
+  id: null
+  added: []

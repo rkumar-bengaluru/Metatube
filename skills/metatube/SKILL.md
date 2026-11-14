@@ -9,6 +9,7 @@ allowed-tools:
   - Bash(uv run --project * metatube-helper quota *)
   - Bash(uv run --project * metatube-helper config show)
   - Bash(uv run --project * metatube-helper secrets-present)
+  - Bash(uv run --project * metatube-helper walker-status *)
   - Bash(ytstudio status*)
   - Bash(ytstudio --version)
   - Bash(ytstudio videos categories*)
@@ -36,9 +37,12 @@ uv run --project "<this skill's base directory>/helper" metatube-helper <subcomm
 
 (The base directory is shown when this skill loads.) Every subcommand prints one JSON object.
 Subcommands: `discover FOLDER`, `lint PATH`, `write-sidecar SIDECAR --from DRAFT`, `auth-check`,
-`match FOLDER [--limit N]`, `set-video-id SIDECAR REF`, `update SIDECAR [--execute]`,
-`upload FOLDER [--execute] [--max N]`, `quota FOLDER --mode update|upload`, `config show`,
-`config set KEY VALUE`, `secrets-present`.
+`match FOLDER [--limit N]`, `set-video-id SIDECAR REF [--replace-deleted] [--source SOURCE]`,
+`update SIDECAR [--execute]`, `upload FOLDER [--execute] [--max N]`,
+`quota FOLDER --mode update|upload`, `config show`, `config set KEY VALUE`, `secrets-present`.
+For Walker sources: `walker-status SOURCE [--repo NAME]`, `walker-sync SOURCE`,
+`playlist-draft SOURCE --from DRAFT`, `playlist SOURCE [--execute] [--create-new]`,
+`playlist-adopt SOURCE PLAYLIST_ID [--confirm]`. `match` and `quota` also accept a Walker source.
 
 Read-only subcommands run without a prompt. Writes and anything with `--execute` ask the user
 for permission each time; that prompt is part of the safety design, so don't ask the user to
@@ -55,11 +59,34 @@ References (read when the step needs them): `references/cli-contract.md`,
 `references/sidecar-schema.md`, `references/seo-guide.md`, `references/setup-console-steps.md`,
 `references/audit-guide.md`.
 
+## Plain folders and Walker sources
+
+Generate and publish take either kind of folder:
+
+- **Plain folder**: videos and their notes side by side (`<stem>.mp4`, `<stem>.md`, `<stem>.srt`).
+  Sidecars go next to the videos.
+- **Walker source**: a folder with a `series.yaml` (a series) or a `walker.yaml` (a single Walker video)
+  whose `format` starts with `walker/`. The videos aren't in it: Walker renders each one into its home
+  (`$WALKER_HOME`, else `home:` in `~/.walker/config.yaml`, else `~/.walker`), one folder per render, e.g.
+  `~/.walker/<repo>/series/<series name>/<episode>/video/<run id>/<series name>-<episode>.mp4`.
+  The sidecar goes into that run folder, next to the video. MetaTube's own bookkeeping (repo name, video
+  ids, playlist) goes in `metatube.yaml` in the source folder, never in a sidecar. A series gets one
+  playlist; a single Walker video gets none.
+
+`walker-status FOLDER` tells them apart: the error `not a Walker series or single-video folder` means a
+plain folder. Pointed at one episode of a series, it names the series folder to use instead. If the user
+points at Walker's home (`~/.walker/...`) rather than the source, it's a plain folder with no videos at
+its top: ask for the source folder (the one with `series.yaml`).
+
 ## Guardrails (always)
 
 - Never `--execute` (update or upload) without the user's explicit yes **in this session**, given
   after they saw the dry run.
 - Never change or remove an existing `video_id`; never upload a sidecar that has one.
+- `metatube.yaml` never overwrites a sidecar's `video_id`: the sidecar is the source of truth and
+  `walker-sync` only copies ids from sidecars into the manifest. If they disagree, stop and show both.
+- One playlist per series. The id in `metatube.yaml` is the only playlist MetaTube adds to; a playlist on
+  the channel with the same title goes through `playlist-adopt` or `--create-new`, never a silent second one.
 - Never apply metadata to a video whose match the user hasn't confirmed.
 - Never invent content: no source material → no draft. Chapters only from a transcript.
 - Never read, print, copy, move or commit OAuth client secrets or ytstudio token files. Only pass
@@ -107,6 +134,10 @@ Every step checks first and skips if already done. Tell the user which steps wer
 
 ## Workflow: generate
 
+First `walker-status FOLDER`. Not a Walker source → **Plain folder**; otherwise → **Walker source**.
+
+### Plain folder
+
 1. `discover FOLDER`. Report `unsupported` files (not uploadable by ytstudio) and `orphan_sidecars`.
    No videos → ask where the videos are; don't guess.
 2. Partition:
@@ -138,6 +169,42 @@ Every step checks first and skips if already done. Tell the user which steps wer
    as a schema check and report problems. Never add `--execute` here.
 9. Tell the user the next step: `/metatube:publish FOLDER` (mode from config).
 
+### Walker source
+
+1. `walker-status SOURCE`. On `repo name unknown`, ask the user once for the name Walker uses for the
+   repo under its home (the folder under `~/.walker`) and re-run with `--repo NAME`. It's saved in
+   `metatube.yaml`, so later runs don't need it.
+2. Show the episode table: episode, status, chosen run and video path (`run.video`), newer render
+   (`newer_run`), `video_id`, and any `warnings` (odd run ids). By status:
+   - `ready`: rendered, not on YouTube yet → draft it.
+   - `live`: has a `video_id` → leave it alone unless the user asks to redraft; then draft from the
+     live run's `.srt` and keep its `video_id`. A `newer_run` is reported ("newer render, not on
+     YouTube; the metadata stays tied to the live run") and otherwise ignored.
+   - `not_rendered`: no video yet → skip it and say so.
+   - `explainer_only`: only an old `explainer.mp4` render, which Studio can't tell apart from other
+     episodes → hard stop for that episode until the user re-renders it, or pins that run in
+     `metatube.yaml` (`episodes.<key>.pin_run`) and gives its video id for `set-video-id`.
+   - `live_run_missing`: `metatube.yaml` has a `video_id` but no run carries it → report it; don't
+     redraft until the user points at a folder or says to draft without chapters.
+   - `disagreement`: show `message` and skip the episode; publish's `walker-sync` step resolves it.
+3. Sources per episode: its `notes` (`story.md`, `screenplay.md`, plus the series `story.md`) and its
+   `transcript` (the run's `.srt`, for chapters). `has_source` and `thin_sources` mean what they mean for
+   a plain folder. Also read `series.yaml` (or `walker.yaml`): `series.title`, `project.name`,
+   `project.repo_url` (link it in the description) and `project.walked_tag` (the version shown).
+   Read `brand_path` if it exists.
+4. Draft and lint each sidecar as in plain steps 4–5. Series titles: `<series.title> Ep. N: Topic`, with
+   N = the episode's position in `episodes`. No previous/next episode links: the playlist links them.
+5. **Playlist draft (series only).** If `walker-status` shows no `playlist`, draft one in a scratch YAML
+   file with `title` (`series.title`), `description` (from the series `story.md`: what it covers, who
+   it's for, the repo link) and `privacy` (`defaults.privacy` from `config show`). If a playlist is
+   already recorded, show it and leave it: MetaTube never changes a created playlist's title or
+   description.
+6. **Review gate.** One block: every episode draft, then the playlist draft. Approve, edit or reject
+   each. Write nothing before approval.
+7. For each approved episode: `write-sidecar <run folder>/<stem>.yaml --from <draft>` (the path is
+   `run.video` with `.yaml`). For the approved playlist: `playlist-draft SOURCE --from <draft>`.
+8. Next step: `/metatube:publish SOURCE`.
+
 ## Workflow: publish
 
 Mode = `--mode` argument, else `mode` from `config show`.
@@ -150,6 +217,9 @@ Mode = `--mode` argument, else `mode` from `config show`.
   `https://console.cloud.google.com/apis/api/youtube.googleapis.com/overview?project=<gcp_project>`
   (from `config show`), ask them to click Enable, wait a few minutes, then re-run `auth-check`.
 - `error` → show `detail` and stop.
+
+Then `walker-status FOLDER`: a Walker source follows **Walker source** at the end of this workflow; a plain
+folder follows the two modes below.
 
 ### Mode update (phase 1: videos uploaded by hand in Studio)
 
@@ -197,3 +267,41 @@ Mode = `--mode` argument, else `mode` from `config show`.
    - A `youtu.be/<id>` appears in output for a file not in `now_live` → the write-back failed. Tell
      the user, and with their OK run `set-video-id` for it so it isn't uploaded twice.
    - If `audit_passed` is false, repeat that the uploads are locked private.
+
+### Walker source
+
+Every write below shows a dry run first and runs with `--execute` only after the user's yes. The user may
+say yes to the metadata updates and the playlist together, once they've seen both dry runs.
+
+1. **Episodes.** Show the `walker-status` episode table (as in generate). Episodes that aren't `ready` or
+   `live` are skipped, with the reason.
+2. **Quota.** `quota SOURCE --mode <mode>` → mention the estimate, including `playlist_creates` and
+   `playlist_adds` (50 units each). Upload mode with `over_safe_daily` → propose fewer episodes this run.
+3. **Mode update.**
+   1. `match SOURCE` pairs episodes without a `video_id` with the channel's videos (Studio titles a hand
+      upload from Walker's file name, e.g. `<series name>-<episode>`). Confirm each as for a plain folder,
+      then `set-video-id <sidecar> <id or url> --source SOURCE`. `--source` makes it refuse an id another
+      episode of the series already holds.
+   2. `walker-sync SOURCE` copies the ids into `metatube.yaml`. `synced: false` → show `conflicts` and
+      `disagreements` and stop until the user resolves them. The sidecar wins; a sidecar's id changes
+      only through `set-video-id --replace-deleted`.
+   3. `update <sidecar>` per live episode, exactly as plain update steps 3–5.
+4. **Mode upload.** Audit warning as in plain upload step 1. For each `ready` episode with a sidecar:
+   `upload <run folder>` (dry run; never for a `live` episode), handle `possible_duplicates` as for a plain
+   folder, and on yes `upload <run folder> --execute`. Then `walker-sync SOURCE`.
+5. **Playlist (series only; skip it for a single Walker video).** No playlist draft → send the user to
+   `/metatube:generate`. Otherwise `playlist SOURCE` (dry run): show `create` (title, description,
+   privacy) if the playlist is new, and `adds` (episode → position).
+   - `collision`: the channel already has a playlist with this title and `metatube.yaml` has no id. Show
+     each one's `items`, with its `flagged` items, next to the series' episodes, and ask whether it is
+     this series' playlist (for example one the user made by hand).
+     - Yes → `playlist-adopt SOURCE <id>`; only after the user's yes with the flagged list in view,
+       `playlist-adopt SOURCE <id> --confirm`. Then re-run `playlist SOURCE`.
+     - A different playlist → `playlist SOURCE --create-new`.
+   - On yes: `playlist SOURCE --execute`. Report `added` and `not_added` (with their output).
+   - A create that printed no id (the error says so): don't re-run it. Ask the user to find the playlist
+     in Studio, then `playlist-adopt` it.
+   - MetaTube only adds episodes, in `series.yaml` order, and never adds one twice. It doesn't rename,
+     reorder or remove anything; the user does that in Studio.
+6. **Report** per episode: updated or uploaded, in the playlist or not, and what still needs Studio
+   (category, language, made-for-kids, visibility).
