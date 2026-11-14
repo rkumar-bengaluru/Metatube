@@ -49,6 +49,6 @@ user what to set in Studio.
 A Walker source folder also holds `metatube.yaml`, MetaTube's bookkeeping for the series or single Walker
 video: the repo name under Walker's home, per-episode `run_id`, `pin_run` and `video_id`, and for a series
 the `playlist` (title, description, privacy, id, and the video ids added). It is written by the helper
-(`walker-status --repo`, `walker-sync`, `playlist-draft`, `playlist`, `playlist-adopt`); the one field the
-owner sets by hand is `pin_run`. None of its keys go into a sidecar. The sidecar is the source of truth for a video's
+(`walker-status --repo`, `walker-sync`, `playlist-draft`, `playlist`, `playlist-adopt`); the owner edits it by
+hand only to set `pin_run`, or to remove a wrong `video_id` after `walker-sync` reports a conflict. None of its keys go into a sidecar. The sidecar is the source of truth for a video's
 `video_id`; `metatube.yaml` only copies it.

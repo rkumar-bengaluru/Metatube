@@ -518,3 +518,8 @@ def test_playlist_create_new_skips_collision(tmp_path, capsys, monkeypatch):
     code, out = run(capsys, "playlist", str(s), "--execute", "--create-new")
     assert yt.calls[0][:2] == ["playlists", "create"] and yt.calls[0][-1] == "--execute"
     assert load_manifest(s).playlist.id == "PLnew_1"
+
+
+def test_set_video_id_missing_sidecar_is_json_error(tmp_path, capsys):
+    code, out = run(capsys, "set-video-id", str(tmp_path / "explainer.yaml"), "dQw4w9WgXcQ")
+    assert code == 1 and "no sidecar" in out["error"]

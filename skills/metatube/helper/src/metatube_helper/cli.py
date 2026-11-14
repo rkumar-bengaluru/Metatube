@@ -119,6 +119,8 @@ def _source_holders(folder: Path, sidecar: Path, video_id: str) -> list[str]:
 
 def cmd_set_video_id(a: argparse.Namespace) -> int:
     sidecar = Path(a.sidecar)
+    if not sidecar.is_file():
+        return _error(f"no sidecar at {sidecar}; write it with write-sidecar first")
     try:
         video_id = parse_video_ref(a.ref)
         holders = [v.stem for v in discover(sidecar.parent).videos

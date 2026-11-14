@@ -182,10 +182,15 @@ First `walker-status FOLDER`. Not a Walker source → **Plain folder**; otherwis
      YouTube; the metadata stays tied to the live run") and otherwise ignored.
    - `not_rendered`: no video yet → skip it and say so.
    - `explainer_only`: only an old `explainer.mp4` render, which Studio can't tell apart from other
-     episodes → hard stop for that episode until the user re-renders it, or pins that run in
-     `metatube.yaml` (`episodes.<key>.pin_run`) and gives its video id for `set-video-id`.
-   - `live_run_missing`: `metatube.yaml` has a `video_id` but no run carries it → report it; don't
-     redraft until the user points at a folder or says to draft without chapters.
+     episodes → hard stop for that episode until the user either re-renders it, or (if it's already on
+     YouTube) pins that run in `metatube.yaml` (`episodes.<key>.pin_run: <run id>`) and gives its video
+     id or URL. Then, in this order: re-run `walker-status`, draft, write the sidecar to
+     `<run folder>/explainer.yaml`, and **straight away** `set-video-id <that sidecar> <id> --source SOURCE`,
+     so the episode is `live` before publish. Never leave a pinned explainer episode `ready`: `match`
+     can't pair it, and upload would send a second copy.
+   - `live_run_missing`: `metatube.yaml` has a `video_id` but no run carries it → report it and skip the
+     episode. MetaTube can't redraft or update it until a run folder holding that video's sidecar is back
+     (the user restores Walker's home or re-creates the run).
    - `disagreement`: show `message` and skip the episode; publish's `walker-sync` step resolves it.
 3. Sources per episode: its `notes` (`story.md`, `screenplay.md`, plus the series `story.md`) and its
    `transcript` (the run's `.srt`, for chapters). `has_source` and `thin_sources` mean what they mean for
@@ -283,8 +288,10 @@ say yes to the metadata updates and the playlist together, once they've seen bot
       then `set-video-id <sidecar> <id or url> --source SOURCE`. `--source` makes it refuse an id another
       episode of the series already holds.
    2. `walker-sync SOURCE` copies the ids into `metatube.yaml`. `synced: false` → show `conflicts` and
-      `disagreements` and stop until the user resolves them. The sidecar wins; a sidecar's id changes
-      only through `set-video-id --replace-deleted`.
+      `disagreements` and stop. The sidecar wins: if the sidecar's id is the right one, the user deletes
+      (or corrects) `episodes.<key>.video_id` in `metatube.yaml` by hand and you re-run `walker-sync`. If
+      the sidecar's id is wrong, it changes only through `set-video-id --replace-deleted`. Two runs with
+      different ids: the user decides which video is real; don't guess.
    3. `update <sidecar>` per live episode, exactly as plain update steps 3–5.
 4. **Mode upload.** Audit warning as in plain upload step 1. For each `ready` episode with a sidecar:
    `upload <run folder>` (dry run; never for a `live` episode), handle `possible_duplicates` as for a plain
@@ -297,8 +304,9 @@ say yes to the metadata updates and the playlist together, once they've seen bot
      this series' playlist (for example one the user made by hand).
      - Yes → `playlist-adopt SOURCE <id>`; only after the user's yes with the flagged list in view,
        `playlist-adopt SOURCE <id> --confirm`. Then re-run `playlist SOURCE`.
-     - A different playlist → `playlist SOURCE --create-new`.
-   - On yes: `playlist SOURCE --execute`. Report `added` and `not_added` (with their output).
+     - A different playlist → `playlist SOURCE --create-new` (dry run).
+   - On yes: `playlist SOURCE --execute`, plus `--create-new` if the dry run used it (the flag isn't
+     remembered; without it the collision comes back). Report `added` and `not_added` (with output).
    - A create that printed no id (the error says so): don't re-run it. Ask the user to find the playlist
      in Studio, then `playlist-adopt` it.
    - MetaTube only adds episodes, in `series.yaml` order, and never adds one twice. It doesn't rename,
