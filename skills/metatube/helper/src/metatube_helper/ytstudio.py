@@ -15,6 +15,10 @@ from metatube_helper.match import ChannelVideo
 PINNED_VERSION = "0.4.2"
 QUOTA_UPLOAD = 1600
 QUOTA_UPDATE = 50
+QUOTA_PLAYLIST_CREATE = 50
+QUOTA_PLAYLIST_ADD = 50
+QUOTA_CAPTION_LIST = 50
+QUOTA_CAPTION_INSERT = 400
 DAILY_QUOTA = 10000
 SAFE_UPLOADS_PER_DAY = 6
 
@@ -57,6 +61,36 @@ def run_ytstudio(args: list[str], profile: str | None = None) -> RunResult:
         )
     except FileNotFoundError:
         return RunResult(argv, 127, "", "ytstudio not found on PATH")
+    return RunResult(argv, proc.returncode, proc.stdout or "", proc.stderr or "")
+
+
+_IS_WINDOWS = os.name == "nt"
+
+
+def ytstudio_python() -> Path | None:
+    """ytstudio's own interpreter (a uv tool venv), or None if it can't be found."""
+    try:
+        proc = subprocess.run(["uv", "tool", "dir"], capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return None
+    if proc.returncode != 0 or not (proc.stdout or "").strip():
+        return None
+    venv = Path(proc.stdout.strip()) / "ytstudio-cli"
+    py = venv / "Scripts" / "python.exe" if _IS_WINDOWS else venv / "bin" / "python"
+    return py if py.exists() else None
+
+
+def run_captions(args: list[str], profile: str | None = None) -> RunResult:
+    """Run yt_captions.py under ytstudio's Python (it needs googleapiclient and ytstudio.services)."""
+    py = ytstudio_python()
+    if py is None:
+        return RunResult(["yt_captions.py", *args], 127, "", "ytstudio's Python not found (uv tool dir)")
+    argv = [str(py), str(Path(__file__).parent / "yt_captions.py"), *args]
+    env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+    if profile:
+        env["YTSTUDIO_PROFILE"] = profile
+    proc = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
     return RunResult(argv, proc.returncode, proc.stdout or "", proc.stderr or "")
 
 
@@ -123,6 +157,85 @@ def update_argv(video_id: str, sidecar: Mapping[str, Any], execute: bool) -> lis
     return [*argv, "--", video_id]
 
 
+@dataclass
+class PlaylistInfo:
+    id: str
+    title: str
+    item_count: int
+    privacy: str
+
+
+@dataclass
+class PlaylistItem:
+    video_id: str
+    title: str
+    position: int
+
+
+# ytstudio pages internally up to -n. A partial list could hide a duplicate playlist or misplace an
+# episode, so the helper asks for everything and fails closed if ytstudio still reports another page.
+PLAYLIST_READ_LIMIT = "5000"
+
+
+def _json_or_raise(result: RunResult, what: str) -> dict:
+    if result.returncode != 0:
+        raise RuntimeError((result.stdout + result.stderr).strip() or f"ytstudio {what} failed")
+    payload = json.loads(result.stdout)
+    if payload.get("next_page_token"):
+        raise RuntimeError(f"ytstudio {what} returned only part of the list (more than {PLAYLIST_READ_LIMIT})")
+    return payload
+
+
+def list_playlists(profile: str | None) -> list[PlaylistInfo]:
+    args = ["playlists", "list", "-n", PLAYLIST_READ_LIMIT, "-o", "json"]
+    payload = _json_or_raise(run_ytstudio(args, profile), "playlists list")
+    return [
+        PlaylistInfo(id=p["id"], title=p.get("title", ""), item_count=int(p.get("item_count") or 0),
+                     privacy=p.get("privacy", ""))
+        for p in payload.get("playlists", [])
+    ]
+
+
+def playlist_items(playlist_id: str, profile: str | None) -> list[PlaylistItem]:
+    """Items in playlist order. Ids may start with "-", so the id goes after "--"."""
+    args = ["playlists", "items", "-n", PLAYLIST_READ_LIMIT, "-o", "json", "--", playlist_id]
+    payload = _json_or_raise(run_ytstudio(args, profile), "playlists items")
+    return [
+        PlaylistItem(video_id=i.get("video_id", ""), title=i.get("title", ""), position=int(i.get("position") or 0))
+        for i in payload.get("items", [])
+    ]
+
+
+def create_playlist_argv(title: str, description: str, privacy: str, language: str | None, execute: bool) -> list[str]:
+    argv = ["playlists", "create", "--title", title, "--description", description, "--privacy", privacy]
+    if language:
+        argv += ["--language", language]
+    if execute:
+        argv.append("--execute")
+    return argv
+
+
+# rich wraps `✓ Created: <title> (<id>)` at 80 columns when stdout is captured, so the id may sit on
+# its own line; ids have no spaces, so they are never split. ytstudio prints "unknown" if YouTube
+# returned no id.
+_CREATED = re.compile(r"Created: .*?\s\(([A-Za-z0-9_-]+)\)\s*\Z", re.DOTALL)
+
+
+def parse_created_id(stdout: str) -> str:
+    m = _CREATED.search(stdout)
+    if not m or m.group(1) == "unknown":
+        raise ValueError(f"no playlist id in ytstudio output: {stdout.strip()!r}")
+    return m.group(1)
+
+
+def add_argv(playlist_id: str, video_id: str, position: int, execute: bool) -> list[str]:
+    opts = ["--video", video_id, "--position", str(position)] + (["--execute"] if execute else [])
+    if playlist_id.startswith("-"):
+        # After "--" click treats it as positional, not an option; options must come first then.
+        return ["playlists", "add", *opts, "--", playlist_id]
+    return ["playlists", "add", playlist_id, *opts]
+
+
 def plan_upload(d: Discovery, max_uploads: int | None) -> UploadPlan:
     pending = [v.path for v in d.videos if v.sidecar is not None and not v.live]
     skipped = [v.path for v in d.videos if v.live]
@@ -153,5 +266,19 @@ def run_upload(plan: UploadPlan, execute: bool, profile: str | None) -> list[Run
     return results
 
 
-def estimate_quota(uploads: int = 0, updates: int = 0) -> int:
-    return uploads * QUOTA_UPLOAD + updates * QUOTA_UPDATE
+def estimate_quota(
+    uploads: int = 0,
+    updates: int = 0,
+    playlist_creates: int = 0,
+    playlist_adds: int = 0,
+    caption_lists: int = 0,
+    caption_inserts: int = 0,
+) -> int:
+    return (
+        uploads * QUOTA_UPLOAD
+        + updates * QUOTA_UPDATE
+        + playlist_creates * QUOTA_PLAYLIST_CREATE
+        + playlist_adds * QUOTA_PLAYLIST_ADD
+        + caption_lists * QUOTA_CAPTION_LIST
+        + caption_inserts * QUOTA_CAPTION_INSERT
+    )

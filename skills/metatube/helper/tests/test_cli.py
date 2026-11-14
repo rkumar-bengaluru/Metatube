@@ -207,3 +207,314 @@ def test_set_video_id_replace_refused_unless_confirmed_deleted(tmp_path, capsys,
     monkeypatch.setattr(cli, "video_exists", lambda vid, profile=None: exists)
     code, out = run(capsys, "set-video-id", str(tmp_path / "ep1.yaml"), "zzzzzzzzzzz", "--replace-deleted")
     assert code == 1 and load_sidecar(tmp_path / "ep1.yaml")["video_id"] == "abcdefghijk"
+
+
+def write_p(path, text=""):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _walker_series(tmp_path, under_walker=True):
+    base = tmp_path / "myrepo" / ".walker" / "series" if under_walker else tmp_path / "loose"
+    s = base / "cube"
+    write_p(s / "series.yaml", "format: walker/0.2\nseries: {name: cube-gs}\nepisodes: [ep1]\nproject: {walked_tag: v1}\n")
+    write_p(s / "ep1" / "walker.yaml", "format: walker/0.2\n")
+    return s
+
+
+def test_cli_walker_status_episode_folder_exit_2(tmp_path, capsys):
+    s = _walker_series(tmp_path)
+    code, out = run(capsys, "walker-status", str(s / "ep1"))
+    assert code == 2 and str(s) in out["error"]
+
+
+def test_cli_walker_status_unknown_repo_then_repo_flag(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("WALKER_HOME", str(tmp_path / "wh"))
+    s = _walker_series(tmp_path, under_walker=False)
+    code, out = run(capsys, "walker-status", str(s))
+    assert code == 1 and "repo name unknown" in out["error"]
+    code, out = run(capsys, "walker-status", str(s), "--repo", "myrepo")
+    assert code == 0 and out["repo"] == "myrepo" and out["episodes"][0]["status"] == "not_rendered"
+    code, out = run(capsys, "walker-status", str(s))
+    assert code == 0 and out["repo"] == "myrepo"
+
+
+def test_cli_walker_sync_copies_ids(tmp_path, capsys, monkeypatch):
+    home = tmp_path / "wh"
+    monkeypatch.setenv("WALKER_HOME", str(home))
+    s = _walker_series(tmp_path)
+    d = home / "myrepo" / "series" / "cube-gs" / "ep1" / "video" / "20261027-100000"
+    write_p(d / "cube-gs-ep1.mp4")
+    write_p(d / "cube-gs-ep1.yaml", "video_id: abcDEF12345\n")
+    code, out = run(capsys, "walker-sync", str(s))
+    assert code == 0
+    from metatube_helper.manifest import load_manifest
+
+    rec = load_manifest(s).episodes["ep1"]
+    assert rec.video_id == "abcDEF12345" and rec.run_id == "20261027-100000"
+
+
+WALKER_SERIES = "format: walker/0.2\nseries: {name: cube-gs}\nepisodes: [ep1, ep2]\nproject: {walked_tag: v1}\n"
+
+
+def _rendered_series(tmp_path, monkeypatch, ids=(None, None)):
+    """A Walker series with two rendered episodes, each with a sidecar. Returns (series folder, run folders)."""
+    home = tmp_path / "wh"
+    monkeypatch.setenv("WALKER_HOME", str(home))
+    s = tmp_path / "myrepo" / ".walker" / "series" / "cube"
+    write_p(s / "series.yaml", WALKER_SERIES)
+    runs = []
+    for ep, vid in zip(("ep1", "ep2"), ids):
+        write_p(s / ep / "walker.yaml", "format: walker/0.2\n")
+        d = home / "myrepo" / "series" / "cube-gs" / ep / "video" / "20261027-100000"
+        write_p(d / f"cube-gs-{ep}.mp4")
+        write_p(d / f"cube-gs-{ep}.yaml", SIDECAR + (f"video_id: {vid}\n" if vid else ""))
+        runs.append(d)
+    return s, runs
+
+
+def test_match_walker_series(tmp_path, capsys, monkeypatch):
+    from metatube_helper.match import ChannelVideo
+    s, _ = _rendered_series(tmp_path, monkeypatch)
+    vids = [ChannelVideo("aaaaaaaaaaa", "cube gs ep1", "private", "2026-10-27"),
+            ChannelVideo("bbbbbbbbbbb", "cube-gs-ep2", "private", "2026-10-27")]
+    monkeypatch.setattr(cli, "list_channel_videos", lambda profile, limit=50: vids)
+    code, out = run(capsys, "match", str(s))
+    assert code == 0
+    assert [m["status"] for m in out["matches"]] == ["matched", "matched"]
+
+
+def test_set_video_id_source_refuses_id_held_by_other_episode(tmp_path, capsys, monkeypatch):
+    s, runs = _rendered_series(tmp_path, monkeypatch, ids=("abcdefghijk", None))
+    target = runs[1] / "cube-gs-ep2.yaml"
+    code, out = run(capsys, "set-video-id", str(target), "abcdefghijk", "--source", str(s))
+    assert code == 1 and "ep1" in out["error"]
+    assert "video_id" not in load_sidecar(target)
+    code, out = run(capsys, "set-video-id", str(target), "zzzzzzzzzzz", "--source", str(s))
+    assert code == 0 and load_sidecar(target)["video_id"] == "zzzzzzzzzzz"
+
+
+def test_quota_walker_series_counts_playlist(tmp_path, capsys, monkeypatch):
+    s, _ = _rendered_series(tmp_path, monkeypatch)
+    code, out = run(capsys, "quota", str(s), "--mode", "update")
+    assert code == 0 and out["count"] == 2 and out["estimated_units"] == 2 * 50 + 50 + 2 * 50
+
+
+def test_quota_walker_series_skips_added_and_existing_playlist(tmp_path, capsys, monkeypatch):
+    from metatube_helper.manifest import Manifest, PlaylistRecord, save_manifest
+    s, _ = _rendered_series(tmp_path, monkeypatch, ids=("abcdefghijk", "lmnopqrstuv"))
+    save_manifest(s, Manifest(repo="myrepo", playlist=PlaylistRecord("t", "d", "private", id="PL1", added=["abcdefghijk"])))
+    code, out = run(capsys, "quota", str(s), "--mode", "update")
+    assert out["estimated_units"] == 2 * 50 + 1 * 50
+
+
+def test_quota_single_walker_source_has_no_playlist_cost(tmp_path, capsys, monkeypatch):
+    home = tmp_path / "wh"
+    monkeypatch.setenv("WALKER_HOME", str(home))
+    s = tmp_path / "myrepo" / ".walker"
+    write_p(s / "walker.yaml", "format: walker/0.2\nproject: {walked_tag: v1}\n")
+    d = home / "myrepo" / "video" / "20261027-100000"
+    write_p(d / "myrepo-v1.mp4")
+    write_p(d / "myrepo-v1.yaml", SIDECAR)
+    code, out = run(capsys, "quota", str(s), "--mode", "update")
+    assert code == 0 and out["count"] == 1 and out["estimated_units"] == 50
+
+
+PLAYLIST_DRAFT = 'title: "cube-gs"\ndescription: "What the series covers."\nprivacy: public\n'
+
+
+def _playlist_series(tmp_path, monkeypatch, ids=("abcdefghijk", "lmnopqrstuv"), playlist_id=None, added=()):
+    from metatube_helper.manifest import Manifest, PlaylistRecord, save_manifest
+    s, _ = _rendered_series(tmp_path, monkeypatch, ids=ids)
+    save_manifest(s, Manifest(repo="myrepo", playlist=PlaylistRecord(
+        "cube-gs", "What the series covers.", "public", id=playlist_id, added=list(added))))
+    return s
+
+
+class FakeYt:
+    """Stands in for cli.run_ytstudio; records argv and scripts create/add output."""
+
+    def __init__(self, created="✓ Created: cube-gs (PLnew_1)\n", add_out="Done: 1 added, 0 failed\n", on_add=None):
+        self.calls, self.created, self.add_out, self.on_add = [], created, add_out, on_add
+
+    def __call__(self, args, profile=None):
+        self.calls.append(args)
+        if args[:2] == ["playlists", "add"] and self.on_add:
+            self.on_add(args)
+        out = self.created if args[:2] == ["playlists", "create"] else self.add_out
+        return RunResult(["ytstudio", *args], 0, out, "")
+
+
+def test_playlist_draft_writes_manifest_keeping_id(tmp_path, capsys, monkeypatch):
+    from metatube_helper.manifest import load_manifest
+    s = _playlist_series(tmp_path, monkeypatch, playlist_id="PL1", added=["abcdefghijk"])
+    write(tmp_path, "draft.yaml", PLAYLIST_DRAFT.replace("public", "unlisted"))
+    code, out = run(capsys, "playlist-draft", str(s), "--from", str(tmp_path / "draft.yaml"))
+    assert code == 0
+    pl = load_manifest(s).playlist
+    assert (pl.privacy, pl.id, pl.added) == ("unlisted", "PL1", ["abcdefghijk"])
+
+
+def test_playlist_draft_lint_errors(tmp_path, capsys, monkeypatch):
+    from metatube_helper.manifest import load_manifest
+    s, _ = _rendered_series(tmp_path, monkeypatch)
+    write(tmp_path, "draft.yaml", 'title: "a <b>"\nprivacy: secret\n')
+    code, out = run(capsys, "playlist-draft", str(s), "--from", str(tmp_path / "draft.yaml"))
+    assert code == 1 and len(out["errors"]) == 2
+    assert load_manifest(s).playlist is None
+
+
+def test_playlist_draft_refuses_single(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("WALKER_HOME", str(tmp_path / "wh"))
+    s = tmp_path / "myrepo" / ".walker"
+    write_p(s / "walker.yaml", "format: walker/0.2\nproject: {walked_tag: v1}\n")
+    write(tmp_path, "draft.yaml", PLAYLIST_DRAFT)
+    code, out = run(capsys, "playlist-draft", str(s), "--from", str(tmp_path / "draft.yaml"))
+    assert code == 1 and "series" in out["error"]
+    assert not (s / "metatube.yaml").exists()
+
+
+def test_playlist_requires_draft(tmp_path, capsys, monkeypatch):
+    s, _ = _rendered_series(tmp_path, monkeypatch)
+    code, out = run(capsys, "playlist", str(s))
+    assert code == 1 and out["error"] == "no playlist draft; run generate"
+
+
+def test_playlist_collision_stops(tmp_path, capsys, monkeypatch):
+    from metatube_helper.ytstudio import PlaylistInfo, PlaylistItem
+    s = _playlist_series(tmp_path, monkeypatch)
+    yt = FakeYt()
+    monkeypatch.setattr(cli, "run_ytstudio", yt)
+    monkeypatch.setattr(cli, "list_playlists", lambda profile: [PlaylistInfo("PLold", " Cube-GS ", 2, "public")])
+    monkeypatch.setattr(cli, "playlist_items", lambda pid, profile: [
+        PlaylistItem("abcdefghijk", "cube-gs: install", 0), PlaylistItem("zzzzzzzzzzz", "Pasta", 1)])
+    code, out = run(capsys, "playlist", str(s), "--execute")
+    assert code == 1 and yt.calls == []
+    [c] = out["collision"]
+    assert c["id"] == "PLold" and len(c["items"]) == 2
+    assert [f["video_id"] for f in c["flagged"]] == ["zzzzzzzzzzz"]
+
+
+def test_playlist_dry_run_shows_create_and_adds(tmp_path, capsys, monkeypatch):
+    from metatube_helper.manifest import load_manifest
+    s = _playlist_series(tmp_path, monkeypatch)
+    yt = FakeYt()
+    monkeypatch.setattr(cli, "run_ytstudio", yt)
+    monkeypatch.setattr(cli, "list_playlists", lambda profile: [])
+    code, out = run(capsys, "playlist", str(s))
+    assert code == 0 and yt.calls == []
+    assert out["create"]["argv"] == ["ytstudio", "playlists", "create", "--title", "cube-gs", "--description",
+                                     "What the series covers.", "--privacy", "public", "--language", "en"]
+    assert [(a["episode"], a["position"]) for a in out["adds"]] == [("ep1", 0), ("ep2", 1)]
+    assert "--execute" not in out["adds"][0]["argv"]
+    assert load_manifest(s).playlist.id is None
+
+
+def test_playlist_execute_creates_then_adds(tmp_path, capsys, monkeypatch):
+    from metatube_helper.manifest import load_manifest
+    from metatube_helper.ytstudio import PlaylistItem
+    s = _playlist_series(tmp_path, monkeypatch)
+    ids_at_add = []
+    yt = FakeYt(on_add=lambda args: ids_at_add.append(load_manifest(s).playlist.id))
+    monkeypatch.setattr(cli, "run_ytstudio", yt)
+    monkeypatch.setattr(cli, "list_playlists", lambda profile: [])
+    reads = iter([[], [PlaylistItem("abcdefghijk", "ep1", 0), PlaylistItem("lmnopqrstuv", "ep2", 1)]])
+    monkeypatch.setattr(cli, "playlist_items", lambda pid, profile: next(reads))
+    code, out = run(capsys, "playlist", str(s), "--execute")
+    assert code == 0, out
+    assert yt.calls[0][:2] == ["playlists", "create"] and yt.calls[0][-1] == "--execute"
+    assert yt.calls[1] == ["playlists", "add", "PLnew_1", "--video", "abcdefghijk", "--position", "0", "--execute"]
+    assert yt.calls[2] == ["playlists", "add", "PLnew_1", "--video", "lmnopqrstuv", "--position", "1", "--execute"]
+    assert ids_at_add == ["PLnew_1", "PLnew_1"]
+    pl = load_manifest(s).playlist
+    assert pl.id == "PLnew_1" and pl.added == ["abcdefghijk", "lmnopqrstuv"]
+    assert out["not_added"] == []
+
+
+def test_playlist_create_unparsed_output_stops(tmp_path, capsys, monkeypatch):
+    from metatube_helper.manifest import load_manifest
+    s = _playlist_series(tmp_path, monkeypatch)
+    yt = FakeYt(created="something else\n")
+    monkeypatch.setattr(cli, "run_ytstudio", yt)
+    monkeypatch.setattr(cli, "list_playlists", lambda profile: [])
+    code, out = run(capsys, "playlist", str(s), "--execute")
+    assert code == 1 and "playlist-adopt" in out["error"] and out["stdout"] == "something else\n"
+    assert len(yt.calls) == 1 and load_manifest(s).playlist.id is None
+
+
+def test_playlist_add_reported_failed(tmp_path, capsys, monkeypatch):
+    from metatube_helper.manifest import load_manifest
+    from metatube_helper.ytstudio import PlaylistItem
+    s = _playlist_series(tmp_path, monkeypatch, playlist_id="PL1")
+    yt = FakeYt()
+    monkeypatch.setattr(cli, "run_ytstudio", yt)
+    reads = iter([[], [PlaylistItem("abcdefghijk", "ep1", 0)]])
+    monkeypatch.setattr(cli, "playlist_items", lambda pid, profile: next(reads))
+    code, out = run(capsys, "playlist", str(s), "--execute")
+    assert code == 1
+    [missing] = out["not_added"]
+    assert missing["episode"] == "ep2" and missing["video_id"] == "lmnopqrstuv" and missing["position"] == 1
+    assert missing["returncode"] == 0 and missing["stdout"] == "Done: 1 added, 0 failed\n"
+    assert missing["argv"][:3] == ["ytstudio", "playlists", "add"]
+    assert load_manifest(s).playlist.added == ["abcdefghijk"]
+
+
+def test_playlist_add_stops_after_a_failed_add(tmp_path, capsys, monkeypatch):
+    s = _playlist_series(tmp_path, monkeypatch, playlist_id="PL1")
+    yt = FakeYt(add_out="Not found abcdefghijk\nDone: 0 added, 1 failed\n")
+    monkeypatch.setattr(cli, "run_ytstudio", yt)
+    monkeypatch.setattr(cli, "playlist_items", lambda pid, profile: [])
+    code, out = run(capsys, "playlist", str(s), "--execute")
+    assert code == 1 and len(yt.calls) == 1
+    assert [(n["episode"], n["returncode"]) for n in out["not_added"]] == [("ep1", 0), ("ep2", None)]
+
+
+def test_playlist_refuses_on_disagreement(tmp_path, capsys, monkeypatch):
+    from metatube_helper.manifest import EpisodeRecord, load_manifest, save_manifest
+    s = _playlist_series(tmp_path, monkeypatch, playlist_id="PL1")
+    m = load_manifest(s)
+    m.episodes["ep1"] = EpisodeRecord(video_id="zzzzzzzzzzz")
+    save_manifest(s, m)
+    yt = FakeYt()
+    monkeypatch.setattr(cli, "run_ytstudio", yt)
+    monkeypatch.setattr(cli, "playlist_items", lambda pid, profile: [])
+    code, out = run(capsys, "playlist", str(s), "--execute")
+    assert code == 1 and out["disagreements"][0]["episode"] == "ep1" and yt.calls == []
+
+
+def test_playlist_adopt_requires_confirm(tmp_path, capsys, monkeypatch):
+    from metatube_helper.manifest import load_manifest
+    from metatube_helper.ytstudio import PlaylistItem
+    s = _playlist_series(tmp_path, monkeypatch)
+    monkeypatch.setattr(cli, "playlist_items", lambda pid, profile: [
+        PlaylistItem("abcdefghijk", "cube-gs: install", 0), PlaylistItem("zzzzzzzzzzz", "Pasta", 1)])
+    code, out = run(capsys, "playlist-adopt", str(s), "PLold")
+    assert code == 0 and out["adopted"] is False
+    assert [f["video_id"] for f in out["flagged"]] == ["zzzzzzzzzzz"] and len(out["items"]) == 2
+    assert load_manifest(s).playlist.id is None
+    code, out = run(capsys, "playlist-adopt", str(s), "PLold", "--confirm")
+    assert code == 0 and out["adopted"] is True
+    pl = load_manifest(s).playlist
+    assert pl.id == "PLold" and pl.added == ["abcdefghijk"]
+
+
+def test_playlist_adopt_refuses_to_replace_existing_id(tmp_path, capsys, monkeypatch):
+    s = _playlist_series(tmp_path, monkeypatch, playlist_id="PL1")
+    monkeypatch.setattr(cli, "playlist_items", lambda pid, profile: [])
+    code, out = run(capsys, "playlist-adopt", str(s), "PLother", "--confirm")
+    assert code == 1 and "PL1" in out["error"]
+
+
+def test_playlist_create_new_skips_collision(tmp_path, capsys, monkeypatch):
+    from metatube_helper.manifest import load_manifest
+    from metatube_helper.ytstudio import PlaylistInfo
+    s = _playlist_series(tmp_path, monkeypatch)
+    yt = FakeYt()
+    monkeypatch.setattr(cli, "run_ytstudio", yt)
+    monkeypatch.setattr(cli, "list_playlists", lambda profile: [PlaylistInfo("PLold", "cube-gs", 2, "public")])
+    monkeypatch.setattr(cli, "playlist_items", lambda pid, profile: [])
+    code, out = run(capsys, "playlist", str(s), "--execute")
+    assert code == 1 and "collision" in out and yt.calls == []
+    code, out = run(capsys, "playlist", str(s), "--execute", "--create-new")
+    assert yt.calls[0][:2] == ["playlists", "create"] and yt.calls[0][-1] == "--execute"
+    assert load_manifest(s).playlist.id == "PLnew_1"

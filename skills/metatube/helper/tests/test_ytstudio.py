@@ -184,3 +184,104 @@ def test_video_exists(fake, result, expected):
     f = fake(result)
     assert video_exists("abcdefghijk", None) is expected
     assert f.calls[0][0][1:] == ["videos", "show", "-o", "json", "--", "abcdefghijk"]
+
+
+def test_estimate_quota_new_kinds():
+    assert estimate_quota(playlist_creates=1, playlist_adds=3, caption_lists=2, caption_inserts=1) == 50 + 150 + 100 + 400
+
+
+def test_parse_created_id():
+    from metatube_helper.ytstudio import parse_created_id
+    assert parse_created_id("✓ Created: Cube — café (PLabc_123-x)\n") == "PLabc_123-x"
+    # rich wraps at 80 columns when stdout is captured, putting the id on its own line
+    wrapped = "✓ Created: Build a Rubik cube solver in Python from scratch — full series \n(PLabc_123-x)\n"
+    assert parse_created_id(wrapped) == "PLabc_123-x"
+    for bad in ("garbage", "", "✓ Created: Cube (unknown)\n"):
+        with pytest.raises(ValueError):
+            parse_created_id(bad)
+
+
+def test_list_playlists_parses_json(fake):
+    from metatube_helper.ytstudio import PlaylistInfo, list_playlists
+    f = fake((0, json.dumps({"playlists": [{"id": "PL1", "title": "Cube", "description": "", "published_at": "",
+                                            "item_count": 3, "privacy": "public"}],
+                             "next_page_token": None, "total_results": 1})))
+    assert list_playlists("work") == [PlaylistInfo("PL1", "Cube", 3, "public")]
+    assert f.calls[0][0][1:] == ["playlists", "list", "-n", "5000", "-o", "json"]
+
+
+def test_playlist_items_parses_json_and_raises(fake):
+    from metatube_helper.ytstudio import PlaylistItem, playlist_items
+    f = fake((0, json.dumps({"items": [{"id": "UExx", "video_id": "abcdefghijk", "title": "ep1", "position": 0,
+                                        "added_at": "", "note": ""}]})),
+             (1, "Session expired or revoked."))
+    assert playlist_items("-PL1", None) == [PlaylistItem("abcdefghijk", "ep1", 0)]
+    assert f.calls[0][0][1:] == ["playlists", "items", "-n", "5000", "-o", "json", "--", "-PL1"]
+    with pytest.raises(RuntimeError, match="Session expired"):
+        playlist_items("PL1", None)
+
+
+def test_create_playlist_argv():
+    from metatube_helper.ytstudio import create_playlist_argv
+    assert create_playlist_argv("Cube", "About cube.", "public", "en", execute=False) == [
+        "playlists", "create", "--title", "Cube", "--description", "About cube.", "--privacy", "public",
+        "--language", "en"]
+    assert create_playlist_argv("Cube", "", "private", None, execute=True)[-1] == "--execute"
+
+
+def test_add_argv():
+    from metatube_helper.ytstudio import add_argv
+    assert add_argv("PL1", "-bcdefghijk", 2, execute=False) == [
+        "playlists", "add", "PL1", "--video", "-bcdefghijk", "--position", "2"]
+    assert add_argv("PL1", "abcdefghijk", 0, execute=True)[-1] == "--execute"
+    assert add_argv("-PL1", "abcdefghijk", 0, execute=True) == [
+        "playlists", "add", "--video", "abcdefghijk", "--position", "0", "--execute", "--", "-PL1"]
+
+
+def test_playlist_reads_fail_closed_on_another_page(fake):
+    from metatube_helper.ytstudio import list_playlists, playlist_items
+    fake((0, json.dumps({"playlists": [], "next_page_token": "CDIQAA"})),
+         (0, json.dumps({"items": [], "next_page_token": "CDIQAA"})))
+    with pytest.raises(RuntimeError, match="part of the list"):
+        list_playlists(None)
+    with pytest.raises(RuntimeError, match="part of the list"):
+        playlist_items("PL1", None)
+
+
+def _fake_uv_dir(tmp_path, layout):
+    py = tmp_path / "ytstudio-cli" / layout
+    py.parent.mkdir(parents=True)
+    py.write_text("")
+    return py
+
+
+@pytest.mark.parametrize("windows,layout", [(True, "Scripts/python.exe"), (False, "bin/python")])
+def test_ytstudio_python_paths(fake, monkeypatch, tmp_path, windows, layout):
+    py = _fake_uv_dir(tmp_path, layout)
+    monkeypatch.setattr(ytstudio, "_IS_WINDOWS", windows)
+    f = fake((0, str(tmp_path) + "\n"))
+    assert ytstudio.ytstudio_python() == py
+    assert f.calls[0][0] == ["uv", "tool", "dir"]
+
+
+def test_ytstudio_python_missing(fake, tmp_path):
+    fake((0, str(tmp_path)))
+    assert ytstudio.ytstudio_python() is None
+    fake(FileNotFoundError())
+    assert ytstudio.ytstudio_python() is None
+
+
+def test_run_captions_env_and_argv(fake, monkeypatch, tmp_path):
+    py = tmp_path / "python"
+    monkeypatch.setattr(ytstudio, "ytstudio_python", lambda: py)
+    f = fake((0, '{"tracks": []}'))
+    r = ytstudio.run_captions(["list", "vid"], profile="work")
+    argv, kwargs = f.calls[0]
+    assert argv[0] == str(py) and argv[1].endswith("yt_captions.py") and argv[2:] == ["list", "vid"]
+    assert kwargs["env"]["YTSTUDIO_PROFILE"] == "work" and kwargs["env"]["PYTHONUTF8"] == "1"
+    assert r.returncode == 0 and r.stdout == '{"tracks": []}'
+
+
+def test_run_captions_missing_interpreter(monkeypatch):
+    monkeypatch.setattr(ytstudio, "ytstudio_python", lambda: None)
+    assert ytstudio.run_captions(["list", "v"], None).returncode == 127
