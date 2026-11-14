@@ -1,0 +1,28 @@
+title: "tinyqueue Tour Ep. 1: Install and Run Your First SQLite Job"
+description: |
+  Install tinyqueue, the Python job queue that stores jobs in one SQLite file, and run a first background job — no Redis needed.
+
+  We pip install tinyqueue, write a task, enqueue it from the Python shell, look at the pending row in the jobs table with sqlite3, and watch a worker in a second terminal run it. Made for Python developers who want background jobs without extra servers.
+
+  00:00 Intro
+  00:35 Installing tinyqueue
+  01:20 Enqueueing a job
+  02:30 Running a worker
+
+  Repo: https://github.com/example/tinyqueue (v0.3.0)
+
+  #Python #SQLite #GitHub
+tags:
+  - tinyqueue
+  - tinyqueue tutorial
+  - python job queue
+  - sqlite job queue
+  - python background jobs
+  - background jobs without redis
+  - pip install tinyqueue
+  - github repo walkthrough
+category_id: "28"
+privacy: public
+made_for_kids: false
+default_language: en
+default_audio_language: en

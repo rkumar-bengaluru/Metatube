@@ -187,6 +187,39 @@ ytstudio videos upload ./my-video-project --execute   # upload
 ytstudio videos update <video-id> --title "…" --description "…" --tags "a,b"   # dry run; add --execute
 ```
 
+### Walker series and single Walker videos
+
+Point generate and publish at a **Walker source folder**: the one with `series.yaml` (a series) or
+`walker.yaml` (a single Walker video), not Walker's home.
+
+```
+/metatube:generate C:\path\to\examples\cube\series
+/metatube:publish  C:\path\to\examples\cube\series --mode update
+```
+
+What changes compared with a plain folder:
+
+| | Plain folder | Walker source |
+| --- | --- | --- |
+| Where the videos are | in the folder | in Walker's home (`$WALKER_HOME`, else `~/.walker`): `<repo>/series/<series>/<episode>/video/<run id>/` |
+| Which video | every video file | per episode, the newest render; a live episode stays on the run that's on YouTube |
+| Notes | `<stem>.md`, `<stem>.srt` | `story.md`, `screenplay.md`, the series `story.md`, the run's `.srt` |
+| Sidecar written to | next to the video | the run folder, next to the video |
+| Bookkeeping | the sidecar only | plus `metatube.yaml` in the source folder (repo name, video ids, playlist) |
+| Titles | `Series Name Ep. N: Topic` from file numbering | `<series.title> Ep. N: Topic`, N = position in `series.yaml` |
+| Playlist | none | one per series (not for a single Walker video), episodes in `series.yaml` order |
+
+MetaTube asks once for the repo name Walker uses under its home when the source folder doesn't show it
+(for example `--repo cube`) and remembers it. Episodes that aren't rendered yet are skipped.
+
+**Playlists.** Generate drafts the playlist (title, description, privacy) alongside the episodes.
+Publish creates it once and adds episodes as they go live, each at its series position. If your channel
+already has a playlist with the same title, for example one you made by hand, MetaTube shows what's in
+it and, on your yes, adopts it instead of creating a second one. After that it only adds episodes; it
+never renames, reorders or removes anything.
+
+See [`examples/walker-series/`](examples/walker-series/).
+
 ---
 
 ## Sidecar schema
@@ -238,6 +271,7 @@ Default: 10,000 units/day per project, resetting at midnight Pacific. Check your
 | --- | --- |
 | List / read | 1 unit |
 | Update metadata (`videos update`) | 50 units |
+| Create a playlist / add a video to it | 50 units each |
 | Upload (`videos.insert`) | ~1,600 units (≈ 6 uploads/day) |
 
 ---
@@ -246,7 +280,8 @@ Default: 10,000 units/day per project, resetting at midnight Pacific. Check your
 
 - [ ] v1: setup, generate, publish (`update` + `upload` modes)
 - [ ] GitHub repo ingestion (clone + analyze code, docs, commit history)
-- [ ] Playlist creation and assignment after a batch
+- [x] Walker series: one playlist per series, episodes added in order
+- [ ] Blank caption track for Walker videos (waiting on a live check)
 - [ ] Thumbnail suggestions
 - [ ] Chrome-driven Cloud Console setup
 - [ ] Production OAuth app (no weekly re-login)

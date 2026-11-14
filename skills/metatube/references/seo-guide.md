@@ -22,8 +22,9 @@ on screen, concepts. Only use what the sources show.
 - Chapters **only from a transcript** (`.srt`/`.vtt`): the first at `00:00`, at least 3 chapters,
   each at least 10 seconds long. No transcript means no chapters. Never guess timestamps from a
   script.
-- Links found in the notes: the repo URL, docs. In a series, link the previous/next episodes if
-  known.
+- Links found in the notes: the repo URL, docs. In a plain-folder series, link the previous/next
+  episodes if known. In a Walker series, don't: the ids only exist after publish, and the series
+  playlist links the episodes.
 - 2–3 hashtags at the end.
 
 ## Tags

@@ -1,0 +1,15 @@
+1
+00:00:00,000 --> 00:00:04,000
+tinyqueue keeps background jobs in one SQLite file.
+
+2
+00:00:35,000 --> 00:00:39,000
+First, install it from PyPI in a fresh virtual environment.
+
+3
+00:01:20,000 --> 00:01:24,000
+Now we enqueue a job and look at the jobs table.
+
+4
+00:02:30,000 --> 00:02:34,000
+In a second terminal, the worker picks the job up.
