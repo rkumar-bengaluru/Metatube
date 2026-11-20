@@ -109,11 +109,12 @@ def _source_holders(folder: Path, sidecar: Path, video_id: str) -> list[str]:
     _, m, states = walker
     holders = []
     for st in states:
-        if st.run and st.run.video.with_suffix(".yaml") == sidecar:
-            continue
         rec = m.episodes.get(st.key)
-        if (st.run and st.run.video_id == video_id) or (rec and rec.video_id == video_id):
-            holders.append(st.key)
+        for rv, name in ((st.run, st.key), (st.short, f"{st.key} (Short)")):
+            if rv and rv.video.with_suffix(".yaml") == sidecar:
+                continue
+            if (rv and rv.video_id == video_id) or (rv is st.run and rec and rec.video_id == video_id):
+                holders.append(name)
     return holders
 
 
@@ -207,12 +208,13 @@ def _possible_duplicates(plan: ytstudio.UploadPlan) -> dict:
 def _walker_quota(a: argparse.Namespace, src: WalkerSource, m: Manifest, states: list[EpisodeState]) -> int:
     wanted = ("ready",) if a.mode == "upload" else ("ready", "live")
     eligible = [s for s in states if s.status in wanted and s.run and s.run.sidecar]
+    shorts = 0 if a.mode == "upload" else len([s for s in states if s.short and s.short.sidecar])  # uploaded by hand
     added = set(m.playlist.added) if m.playlist else set()
     adds = 0 if src.kind == "single" else len([s for s in eligible if not (s.video_id and s.video_id in added)])
     creates = 0 if src.kind == "single" or (m.playlist and m.playlist.id) else 1
-    kinds = {"uploads": len(eligible)} if a.mode == "upload" else {"updates": len(eligible)}
+    kinds = {"uploads": len(eligible)} if a.mode == "upload" else {"updates": len(eligible) + shorts}
     units = estimate_quota(**kinds, playlist_creates=creates, playlist_adds=adds)
-    return _emit({"count": len(eligible), "playlist_creates": creates, "playlist_adds": adds,
+    return _emit({"count": len(eligible), "shorts": shorts, "playlist_creates": creates, "playlist_adds": adds,
                   "estimated_units": units, "daily_quota": ytstudio.DAILY_QUOTA,
                   "over_safe_daily": a.mode == "upload" and len(eligible) > SAFE_UPLOADS_PER_DAY})
 

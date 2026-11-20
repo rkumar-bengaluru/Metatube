@@ -165,6 +165,18 @@ def find_runs(root: Path, stem: str) -> tuple[list[RunVideo], list[Path]]:
     return cands, explainers
 
 
+def find_short(root: Path, stem: str) -> RunVideo | None:
+    """The Short Walker rendered beside a run (`<run>/shorts/<stem>-short.mp4`): the one on YouTube, else the newest."""
+    if not root.is_dir():
+        return None
+    shorts = [run_video(run / "shorts", f"{stem}-short") for run in sorted(p for p in root.iterdir() if p.is_dir())
+              if (run / "shorts" / f"{stem}-short.mp4").is_file()]
+    for s in shorts:
+        s.run_id = s.folder.parent.name  # the run's id, not "shorts"
+    # shortcut: two live Shorts with different ids pick the newest, not a disagreement; add one if it happens
+    return choose_run([s for s in shorts if s.video_id]) or choose_run(shorts)
+
+
 def choose_run(cands: list[RunVideo]) -> RunVideo | None:
     """The newest run: by run id when all ids are Walker timestamps, else by file mtime.
 

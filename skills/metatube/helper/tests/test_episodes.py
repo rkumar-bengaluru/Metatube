@@ -171,3 +171,30 @@ def test_walker_sync_run_vs_run_disagreement_exits_1_untouched(home, series, cap
     assert cli.main(["walker-sync", str(series)]) == 1
     assert "ep1" in capsys.readouterr().out
     assert (series / "metatube.yaml").read_bytes() == before
+
+
+def short_dir(run, ep, video_id=None):
+    d = run / "shorts"
+    _write(d / f"cube-gs-{ep}-short.mp4")
+    _write(d / f"cube-gs-{ep}-short.srt", SRT)
+    if video_id:
+        _write(d / f"cube-gs-{ep}-short.yaml", f"video_id: {video_id}\n")
+    return d
+
+
+def test_short_found_newest_unless_one_is_live(home, series):
+    old = run_dir(home, "ep1", "20261027-100000")
+    new = run_dir(home, "ep1", "20261028-100000")
+    short_dir(old, "ep1")
+    short_dir(new, "ep1")
+    s = states(series)
+    assert s["ep1"].short.run_id == "20261028-100000" and s["ep1"].short.srt is not None
+    assert s["ep2"].short is None
+    short_dir(old, "ep1", video_id="shortshort1")
+    assert states(series)["ep1"].short.run_id == "20261027-100000"
+
+
+def test_walker_entries_include_short(home, series):
+    short_dir(run_dir(home, "ep1", "20261027-100000"), "ep1")
+    stems = [e.stem for e in walker_entries(list(states(series).values()))]
+    assert stems == ["cube-gs-ep1", "cube-gs-ep1-short"]
