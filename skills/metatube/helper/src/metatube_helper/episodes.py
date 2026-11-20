@@ -12,6 +12,7 @@ from metatube_helper.walker import (
     choose_run,
     expected_stem,
     find_runs,
+    find_short,
     odd_run_ids,
     run_video,
     video_root,
@@ -33,6 +34,7 @@ class EpisodeState:
     thin_sources: list[Path]
     message: str = ""
     warnings: list[str] = field(default_factory=list)
+    short: RunVideo | None = None  # the episode's YouTube Short; its own sidecar and video id, no playlist
 
     @property
     def has_source(self) -> bool:
@@ -89,7 +91,8 @@ def resolve(src: WalkerSource, m: Manifest) -> list[EpisodeState]:
     for position, key in enumerate(keys, start=1):
         rec = m.episodes.get(key) or EpisodeRecord()
         episode = key if src.kind == "series" else None
-        cands, explainers = find_runs(video_root(src, episode), expected_stem(src, episode))
+        root, stem = video_root(src, episode), expected_stem(src, episode)
+        cands, explainers = find_runs(root, stem)
         pinned = next((f for f in explainers if rec.pin_run and f.name == rec.pin_run), None)
         if pinned:
             cands = cands + [run_video(pinned, "explainer")]
@@ -104,7 +107,8 @@ def resolve(src: WalkerSource, m: Manifest) -> list[EpisodeState]:
                 f"run ids not in Walker's YYYYMMDD-HHMMSS form: {', '.join(odd)}; chose by file time (best effort)"
             )
         states.append(
-            EpisodeState(key, position, status, run, newer, video_id, notes, transcript, thin, message, warnings)
+            EpisodeState(key, position, status, run, newer, video_id, notes, transcript, thin, message, warnings,
+                         find_short(root, stem))
         )
     return states
 
@@ -112,6 +116,7 @@ def resolve(src: WalkerSource, m: Manifest) -> list[EpisodeState]:
 def walker_entries(states: list[EpisodeState]) -> list[VideoEntry]:
     entries = []
     for s in states:
-        if s.run:
-            entries.extend(e for e in discover(s.run.folder).videos if e.path == s.run.video)
+        for rv in (s.run, s.short):
+            if rv:
+                entries.extend(e for e in discover(rv.folder).videos if e.path == rv.video)
     return entries

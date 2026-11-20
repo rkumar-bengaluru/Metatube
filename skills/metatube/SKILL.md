@@ -192,6 +192,9 @@ First `walker-status FOLDER`. Not a Walker source → **Plain folder**; otherwis
      episode. MetaTube can't redraft or update it until a run folder holding that video's sidecar is back
      (the user restores Walker's home or re-creates the run).
    - `disagreement`: show `message` and skip the episode; publish's `walker-sync` step resolves it.
+   An episode's `short` (any status) is its YouTube Short: Walker's vertical cut at
+   `<run>/shorts/<stem>-short.mp4`. The user uploads it by hand as its own video; it never goes in the
+   playlist. Show it in the table (path, `video_id`); `short: null` means the render made none.
 3. Sources per episode: its `notes` (`story.md`, `screenplay.md`, plus the series `story.md`) and its
    `transcript` (the run's `.srt`, for chapters). `has_source` and `thin_sources` mean what they mean for
    a plain folder. Also read `series.yaml` (or `walker.yaml`): `series.title`, `project.name`,
@@ -199,6 +202,12 @@ First `walker-status FOLDER`. Not a Walker source → **Plain folder**; otherwis
    Read `brand_path` if it exists.
 4. Draft and lint each sidecar as in plain steps 4–5. Series titles: `<series.title> Ep. N: Topic`, with
    N = the episode's position in `episodes`. No previous/next episode links: the playlist links them.
+   **Short sidecar** (each episode with a `short`; a live one only if the user asks): sources are the
+   Short's own `.srt` (`short.srt`) and its `short.yaml` beside it (the `hook` line), plus the episode's
+   notes. Title: one hook-style line of 60 chars or fewer naming the project, ending ` #Shorts`; no
+   `Ep. N`. Description: 1–3 sentences on the moment shown, then `Full video: https://youtu.be/<id>`
+   when the episode has a `video_id` (else the repo link only), the repo link, and 2–3 hashtags. No
+   chapters: Shorts don't show them. Tags as for the episode.
 5. **Playlist draft (series only).** If `walker-status` shows no `playlist`, draft one in a scratch YAML
    file with `title` (`series.title`), `description` (from the series `story.md`: what it covers, who
    it's for, the repo link) and `privacy` (`defaults.privacy` from `config show`). If a playlist is
@@ -207,7 +216,7 @@ First `walker-status FOLDER`. Not a Walker source → **Plain folder**; otherwis
 6. **Review gate.** One block: every episode draft, then the playlist draft. Approve, edit or reject
    each. Write nothing before approval.
 7. For each approved episode: `write-sidecar <run folder>/<stem>.yaml --from <draft>` (the path is
-   `run.video` with `.yaml`). For the approved playlist: `playlist-draft SOURCE --from <draft>`.
+   `run.video` with `.yaml`); for its Short, `short.video` with `.yaml`. For the approved playlist: `playlist-draft SOURCE --from <draft>`.
 8. Next step: `/metatube:publish SOURCE`.
 
 ## Workflow: publish
@@ -286,14 +295,16 @@ say yes to the metadata updates and the playlist together, once they've seen bot
    1. `match SOURCE` pairs episodes without a `video_id` with the channel's videos (Studio titles a hand
       upload from Walker's file name, e.g. `<series name>-<episode>`). Confirm each as for a plain folder,
       then `set-video-id <sidecar> <id or url> --source SOURCE`. `--source` makes it refuse an id another
-      episode of the series already holds.
+      episode, or another episode's Short, already holds. `match` lists Shorts too (Studio titles them
+      `<stem> short`).
    2. `walker-sync SOURCE` copies the ids into `metatube.yaml`. `synced: false` → show `conflicts` and
       `disagreements` and stop. The sidecar wins: if the sidecar's id is the right one, the user deletes
       (or corrects) `episodes.<key>.video_id` in `metatube.yaml` by hand and you re-run `walker-sync`. If
       the sidecar's id is wrong, it changes only through `set-video-id --replace-deleted`. Two runs with
       different ids: the user decides which video is real; don't guess.
-   3. `update <sidecar>` per live episode, exactly as plain update steps 3–5.
-4. **Mode upload.** Audit warning as in plain upload step 1. For each `ready` episode with a sidecar:
+   3. `update <sidecar>` per live episode, and per Short with a sidecar and `video_id`, exactly as plain
+      update steps 3–5. `walker-sync` doesn't track Shorts: their sidecars hold their ids.
+4. **Mode upload.** Shorts are never uploaded by MetaTube; use update mode for them. Audit warning as in plain upload step 1. For each `ready` episode with a sidecar:
    `upload <run folder>` (dry run; never for a `live` episode), handle `possible_duplicates` as for a plain
    folder, and on yes `upload <run folder> --execute`. Then `walker-sync SOURCE`.
 5. **Playlist (series only; skip it for a single Walker video).** No playlist draft → send the user to
