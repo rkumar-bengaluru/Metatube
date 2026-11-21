@@ -1,4 +1,4 @@
-title: "tinyqueue Deep Dive Ep. 1: How the SQLite Job Queue Works"
+title: "How the SQLite Job Queue Works | tinyqueue Deep Dive Ep. 1"
 description: |
   See how tinyqueue stores Python background jobs in SQLite and how workers claim them safely without double-processing.
 

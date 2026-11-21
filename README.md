@@ -206,7 +206,7 @@ What changes compared with a plain folder:
 | Notes | `<stem>.md`, `<stem>.srt` | `story.md`, `screenplay.md`, the series `story.md`, the run's `.srt` |
 | Sidecar written to | next to the video | the run folder, next to the video |
 | Bookkeeping | the sidecar only | plus `metatube.yaml` in the source folder (repo name, video ids, playlist) |
-| Titles | `Series Name Ep. N: Topic` from file numbering | `<series.title> Ep. N: Topic`, N = position in `series.yaml` |
+| Titles | `Topic \| Series Name Ep. N` from file numbering | `Topic \| <series.title> Ep. N`, N = position in `series.yaml` |
 | Playlist | none | one per series (not for a single Walker video), episodes in `series.yaml` order |
 
 MetaTube asks once for the repo name Walker uses under its home when the source folder doesn't show it

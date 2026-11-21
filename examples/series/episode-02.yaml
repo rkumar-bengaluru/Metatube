@@ -1,4 +1,4 @@
-title: "tinyqueue Deep Dive Ep. 2: Scheduled Jobs and Retry Backoff"
+title: "Scheduled Jobs and Retry Backoff | tinyqueue Deep Dive Ep. 2"
 description: |
   Schedule Python background jobs with tinyqueue and make failures safe with retries, exponential backoff and re-queuing.
 

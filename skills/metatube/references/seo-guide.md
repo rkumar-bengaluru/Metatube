@@ -12,7 +12,10 @@ on screen, concepts. Only use what the sources show.
 
 - 70 characters or fewer (hard limit 100). Put the main query phrase in the first ~40 characters.
 - Say what the viewer gets: "Install acme-cli and Run Your First Pipeline".
-- Series: `Series Name Ep. N: Topic`, consistent across episodes.
+- Series: `Topic | Series Name Ep. N`, consistent across episodes. The topic comes first because search and
+  phones cut titles short and a new series name is not yet something anyone types: "Metric Depth From One
+  Photo on a Mac | Depth Pro 2 Ep. 1", not "Depth Pro 2 in Practice Ep. 1: Metric Depth From One Photo". Use
+  the shortest form of the series name that stays recognisable.
 - No clickbait, ALL CAPS, emoji spam, or promises the video doesn't keep.
 
 ## Description

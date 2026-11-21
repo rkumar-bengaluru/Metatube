@@ -1,4 +1,4 @@
-title: "tinyqueue Tour Ep. 2: Retries, Scheduled Jobs and Many Workers"
+title: "Retries, Scheduled Jobs and Many Workers | tinyqueue Tour Ep. 2"
 description: |
   Make tinyqueue jobs retry with backoff, schedule them for later with run_at, and run several workers on one SQLite file — each job runs exactly once.
 
