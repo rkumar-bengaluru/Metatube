@@ -157,7 +157,7 @@ First `walker-status FOLDER`. Not a Walker source → **Plain folder**; otherwis
 4. For each video write down a one-sentence summary of what it teaches and the queries a developer
    would type to find it (repo name, tool, task, error messages, concepts).
 5. Draft a sidecar per video using `config show` defaults and `references/seo-guide.md`.
-   Series (numbered files) use `Series Name Ep. N: Topic`. Write each draft to a scratch file
+   Series (numbered files) use `Topic | Series Name Ep. N`, the topic first (`references/seo-guide.md`). Write each draft to a scratch file
    **outside the project folder** (your scratchpad/temp directory, e.g. `<stem>.draft.yaml`) and
    run `lint` on it. Fix every error before the user sees it; keep the warnings to show them.
 6. **Review gate.** Show every draft in one block: file, summary, lint warnings, then the YAML.
@@ -200,12 +200,13 @@ First `walker-status FOLDER`. Not a Walker source → **Plain folder**; otherwis
    a plain folder. Also read `series.yaml` (or `walker.yaml`): `series.title`, `project.name`,
    `project.repo_url` (link it in the description) and `project.walked_tag` (the version shown).
    Read `brand_path` if it exists.
-4. Draft and lint each sidecar as in plain steps 4–5. Series titles: `<series.title> Ep. N: Topic`, with
-   N = the episode's position in `episodes`. No previous/next episode links: the playlist links them.
+4. Draft and lint each sidecar as in plain steps 4–5. Series titles: `Topic | <series.title> Ep. N`, with
+   N = the episode's position in `episodes`; the topic is what the viewer gets, in the words they search for
+   (the series `story.md` may list them). No previous/next episode links: the playlist links them.
    **Short sidecar** (each episode with a `short`; a live one only if the user asks): sources are the
    Short's own `.srt` (`short.srt`) and its `short.yaml` beside it (the `hook` line), plus the episode's
-   notes. Title: one hook-style line of 60 chars or fewer naming the project, ending ` #Shorts`; no
-   `Ep. N`. Description: 1–3 sentences on the moment shown, then `Full video: https://youtu.be/<id>`
+   notes. Title: one hook-style line of 60 chars or fewer naming the project, with the same searched words as
+   its episode, ending ` #Shorts`; no `Ep. N`. Description: 1–3 sentences on the moment shown, then `Full video: https://youtu.be/<id>`
    when the episode has a `video_id` (else the repo link only), the repo link, and 2–3 hashtags. No
    chapters: Shorts don't show them. Tags as for the episode.
 5. **Playlist draft (series only).** If `walker-status` shows no `playlist`, draft one in a scratch YAML
@@ -323,4 +324,8 @@ say yes to the metadata updates and the playlist together, once they've seen bot
    - MetaTube only adds episodes, in `series.yaml` order, and never adds one twice. It doesn't rename,
      reorder or remove anything; the user does that in Studio.
 6. **Report** per episode: updated or uploaded, in the playlist or not, and what still needs Studio
-   (category, language, made-for-kids, visibility).
+   (category, language, made-for-kids, visibility). Then the Studio steps MetaTube can't do, per video:
+   - each Short's **Related video** set to its episode (Studio → the Short → Related video), the only link a
+     Shorts viewer can tap;
+   - not yet public: schedule one episode a day, its Short the same day (Studio's Schedule; `publish_at`
+     works only for API uploads, locked private until the audit passes).

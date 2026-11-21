@@ -1,4 +1,4 @@
-title: "tinyqueue Tour Ep. 1: Install and Run Your First SQLite Job"
+title: "Install and Run Your First SQLite Job | tinyqueue Tour Ep. 1"
 description: |
   Install tinyqueue, the Python job queue that stores jobs in one SQLite file, and run a first background job — no Redis needed.
 
