@@ -129,11 +129,16 @@ def video_exists(video_id: str, profile: str | None) -> bool | None:
     return None
 
 
+def _json_of(stdout: str) -> dict:
+    """The JSON ytstudio printed, ignoring anything after it (its "Update available" notice)."""
+    return json.JSONDecoder().raw_decode(stdout.lstrip())[0]
+
+
 def list_channel_videos(profile: str | None, limit: int = 50) -> list[ChannelVideo]:
     result = run_ytstudio(["videos", "list", "-n", str(limit), "-o", "json"], profile)
     if result.returncode != 0:
         raise RuntimeError((result.stdout + result.stderr).strip() or "ytstudio videos list failed")
-    payload = json.loads(result.stdout)
+    payload = _json_of(result.stdout)
     return [
         ChannelVideo(id=v["id"], title=v.get("title", ""), privacy=v.get("privacy", ""),
                      published_at=v.get("published_at", ""), description=v.get("description", ""),
@@ -180,7 +185,7 @@ PLAYLIST_READ_LIMIT = "5000"
 def _json_or_raise(result: RunResult, what: str) -> dict:
     if result.returncode != 0:
         raise RuntimeError((result.stdout + result.stderr).strip() or f"ytstudio {what} failed")
-    payload = json.loads(result.stdout)
+    payload = _json_of(result.stdout)
     if payload.get("next_page_token"):
         raise RuntimeError(f"ytstudio {what} returned only part of the list (more than {PLAYLIST_READ_LIMIT})")
     return payload

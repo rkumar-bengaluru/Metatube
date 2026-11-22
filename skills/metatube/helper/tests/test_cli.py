@@ -82,6 +82,12 @@ def test_set_video_id_from_url(tmp_path, capsys):
     assert load_sidecar(tmp_path / "ep1.yaml")["video_id"] == "abcdefghijk"
 
 
+def test_set_video_id_bare_id_starting_with_dash(tmp_path, capsys):
+    write(tmp_path, "ep1.yaml", SIDECAR)
+    code, out = run(capsys, "set-video-id", str(tmp_path / "ep1.yaml"), "-4QVAulxDCo")
+    assert code == 0 and out["video_id"] == "-4QVAulxDCo"
+
+
 def test_set_video_id_conflict_exit_1(tmp_path, capsys):
     write(tmp_path, "ep1.yaml", SIDECAR + "video_id: abcdefghijk\n")
     code, out = run(capsys, "set-video-id", str(tmp_path / "ep1.yaml"), "zzzzzzzzzzz")
