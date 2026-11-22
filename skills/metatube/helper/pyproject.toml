@@ -1,6 +1,6 @@
 [project]
 name = "metatube-helper"
-version = "0.3.1"
+version = "0.3.2"
 description = "Deterministic helpers for the MetaTube Claude Code skill"
 requires-python = ">=3.12"
 dependencies = [
