@@ -128,6 +128,12 @@ def test_list_channel_videos_parses_json(fake):
     assert f.calls[0][0][1:] == ["videos", "list", "-n", "50", "-o", "json"]
 
 
+def test_json_survives_update_notice_after_it(fake):
+    out = json.dumps({"videos": [{"id": "aaaaaaaaaaa", "title": "ep1"}]})
+    fake((0, out + "\n\nUpdate available: 0.4.2 → 0.5.0\nRun: uv tool upgrade ytstudio-cli\n"))
+    assert [v.id for v in list_channel_videos(None)] == ["aaaaaaaaaaa"]
+
+
 def test_list_channel_videos_raises_on_failure(fake):
     fake((1, "Session expired"))
     with pytest.raises(RuntimeError):

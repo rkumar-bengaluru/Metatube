@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -499,7 +500,14 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
+# A bare video id may start with "-" (e.g. -4QVAulxDCo), which argparse takes for a flag; a youtu.be link is not.
+# shortcut: an id starting with "--" still reads as a flag, so pass its URL; no flag here is 11 characters long.
+_DASH_ID = re.compile(r"^-[A-Za-z0-9_][A-Za-z0-9_-]{9}$")
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    argv = [f"https://youtu.be/{a}" if _DASH_ID.match(a) else a for a in argv]
     args = _parser().parse_args(argv)
     return args.fn(args)
 
