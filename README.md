@@ -98,7 +98,7 @@ Google's guide: [Quota and Compliance Audits](https://developers.google.com/yout
 | --- | --- |
 | **Claude Code** | With plugin support. |
 | **Python ≥ 3.12** and **uv** | `ytstudio-cli` is installed with `uv tool install`, and MetaTube's helper (`skills/metatube/helper`) runs with `uv run`. |
-| **`ytstudio-cli` 0.4.2** | Pinned. `/metatube:setup` offers to install it. |
+| **`ytstudio-cli` 0.5.0** | Pinned. `/metatube:setup` offers to install it. |
 | **Google Cloud project** | **YouTube Data API v3** enabled. Setup also enables the **YouTube Analytics API** (ytstudio requests analytics scopes). |
 | **gcloud** (optional) | Used only to check/enable the APIs. |
 | **A YouTube channel** | Uploads fail for Google accounts without one; create it in YouTube first. |
@@ -129,7 +129,7 @@ Then run `/metatube:setup`.
 Every step checks first and is skipped if already done, so it's safe to re-run.
 
 1. **Tooling.** Checks Python, uv, gcloud and `ytstudio --version`; offers
-   `uv tool install ytstudio-cli==0.4.2`.
+   `uv tool install ytstudio-cli==0.5.0`.
 2. **APIs.** Enables YouTube Data API v3 / YouTube Analytics API with gcloud if they're off.
 3. **Consent screen + OAuth client (manual, ~5 minutes).** Google offers no API for these, so
    MetaTube gives you the click path:

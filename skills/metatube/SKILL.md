@@ -24,7 +24,7 @@ allowed-tools:
 # MetaTube
 
 You turn a folder of rendered training videos plus their source material into YouTube metadata,
-and apply it through **ytstudio-cli 0.4.2** (the base tool). You never call the YouTube API
+and apply it through **ytstudio-cli 0.5.0** (the base tool). You never call the YouTube API
 yourself. The audience is developers learning about GitHub repos.
 
 ## The helper
@@ -52,8 +52,8 @@ Never run `ytstudio videos update` or `ytstudio videos upload` yourself: use the
 passes long descriptions safely and forces UTF-8. Never write or edit a sidecar (`*.yaml` next to
 a video) with the Write or Edit tool: write drafts elsewhere and use `write-sidecar`, which lints
 the draft and refuses to change or drop a `video_id`. Raw `ytstudio` is fine for `status`, `init`,
-`login` (user runs it), `videos categories`. ytstudio 0.4.2 has **no** `profile brand` command
-(it exists only in unreleased ytstudio source); don't call it.
+`login` (user runs it), `videos categories`. ytstudio 0.5.0 has a `profile brand`
+command, but MetaTube keeps its own `brand.md` (`config show` gives `brand_path`); don't call it.
 
 References (read when the step needs them): `references/cli-contract.md`,
 `references/sidecar-schema.md`, `references/seo-guide.md`, `references/setup-console-steps.md`,
@@ -102,8 +102,8 @@ its top: ask for the source folder (the one with `series.yaml`).
 Every step checks first and skips if already done. Tell the user which steps were skipped.
 
 1. **Tooling.** `python --version` (≥ 3.12), `uv --version`, `gcloud --version` (optional),
-   `ytstudio --version`. If ytstudio is missing or not 0.4.2, ask, then run
-   `uv tool install ytstudio-cli==0.4.2` (add `--force` when replacing another version).
+   `ytstudio --version`. If ytstudio is missing or not 0.5.0, ask, then run
+   `uv tool install ytstudio-cli==0.5.0` (add `--force` when replacing another version).
 2. **APIs.** Project id: argument, else `gcloud config get-value project` (confirm with the user).
    `gcloud services list --enabled --project <id>`; if `youtube.googleapis.com` or
    `youtubeanalytics.googleapis.com` is missing, ask, then `gcloud services enable <api> --project <id>`.

@@ -1,12 +1,13 @@
-# ytstudio-cli contract (pinned 0.4.2)
+# ytstudio-cli contract (pinned 0.5.0)
 
-Verified against the installed ytstudio-cli 0.4.2 from PyPI. Re-verify everything here before
-bumping the pin, against the released package, not the GitHub main branch (main has unreleased
-commands such as `profile brand`).
+Verified against the installed ytstudio-cli 0.5.0 from PyPI (diffed against the 0.4.2 wheel: the
+commands below are unchanged; 0.5.0 adds `profile brand`, `videos captions` and `videos transcript`,
+and drops duplicate entries across pages in `videos list` and `playlists items`). Re-verify everything
+here before bumping the pin, against the released package, not the GitHub main branch.
 
 ## Install and auth
 
-- `uv tool install ytstudio-cli==0.4.2` (Python >= 3.12). Works on Windows.
+- `uv tool install ytstudio-cli==0.5.0` (Python >= 3.12). Works on Windows.
 - `ytstudio init --client-secrets <path>` copies the OAuth client to
   `~/.config/ytstudio-cli/client_secrets.json`. MetaTube only checks that this file exists.
 - `ytstudio login` runs a local OAuth server on port 9876 and opens the browser (one consent).
@@ -26,7 +27,8 @@ commands such as `profile brand`).
 - `ytstudio videos categories` lists category ids.
 - `ytstudio videos show -o json -- <id>` prints one video; "Video not found: <id>" and exit 1 when
   it was deleted.
-- No `profile brand` command in 0.4.2. MetaTube keeps its own optional `brand.md` next to its config.
+- 0.5.0 has `profile brand show|set|edit` (a `brand.md` per ytstudio profile). MetaTube doesn't use it:
+  it keeps its own optional `brand.md` next to its config.
 
 ## Updating (phase 1)
 
@@ -52,7 +54,7 @@ commands such as `profile brand`).
 
 ## Playlists
 
-Verified against the installed 0.4.2 (`ytstudio playlists <cmd> --help` and the package source).
+Verified against the installed 0.5.0 (`ytstudio playlists <cmd> --help` and the package source).
 Helper subcommands: `playlist-draft`, `playlist`, `playlist-adopt` (series only). `playlist` stops
 when the channel already has a playlist with the same title; `playlist --create-new` (after the owner
 says it's a different one) creates this series' own playlist anyway.
