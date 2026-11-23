@@ -558,4 +558,15 @@ def test_set_video_id_source_refuses_an_id_a_second_short_holds(tmp_path, capsys
                     "--source", str(s))
     assert code == 1 and "ep1 (Short 2)" in out["error"]
     code, out = run(capsys, "quota", str(s), "--mode", "update")
+    assert out["shorts"] == 1  # only Short 2 has an id: a Short without one is not updated
+    code, out = run(capsys, "set-video-id", str(runs[0] / "shorts" / "cube-gs-ep1-short.yaml"), "shortshort1",
+                    "--source", str(s))
+    code, out = run(capsys, "quota", str(s), "--mode", "update")
     assert out["shorts"] == 2
+
+
+def test_set_video_id_source_guards_a_short_whose_file_is_gone(tmp_path, capsys, monkeypatch):
+    s, runs = _rendered_series(tmp_path, monkeypatch, ids=("abcdefghijk", None))
+    write_p(runs[0] / "shorts" / "cube-gs-ep1-short-2.yaml", "video_id: shortshort2\n")  # its .mp4 was removed
+    code, out = run(capsys, "set-video-id", str(runs[1] / "cube-gs-ep2.yaml"), "shortshort2", "--source", str(s))
+    assert code == 1 and "ep1 (Short 2)" in out["error"]

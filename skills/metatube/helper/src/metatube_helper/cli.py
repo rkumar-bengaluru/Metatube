@@ -209,7 +209,8 @@ def _possible_duplicates(plan: ytstudio.UploadPlan) -> dict:
 def _walker_quota(a: argparse.Namespace, src: WalkerSource, m: Manifest, states: list[EpisodeState]) -> int:
     wanted = ("ready",) if a.mode == "upload" else ("ready", "live")
     eligible = [s for s in states if s.status in wanted and s.run and s.run.sidecar]
-    shorts = 0 if a.mode == "upload" else sum(1 for s in states for x in s.shorts if x.sidecar)  # uploaded by hand
+    # Shorts are updated, never uploaded: those with a sidecar and a video id
+    shorts = 0 if a.mode == "upload" else sum(1 for s in states for x in s.shorts if x.sidecar and x.video_id)
     added = set(m.playlist.added) if m.playlist else set()
     adds = 0 if src.kind == "single" else len([s for s in eligible if not (s.video_id and s.video_id in added)])
     creates = 0 if src.kind == "single" or (m.playlist and m.playlist.id) else 1

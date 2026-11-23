@@ -108,9 +108,10 @@ def resolve(src: WalkerSource, m: Manifest) -> list[EpisodeState]:
             warnings.append(
                 f"run ids not in Walker's YYYYMMDD-HHMMSS form: {', '.join(odd)}; chose by file time (best effort)"
             )
+        shorts, short_warnings = find_shorts(root, stem)
         states.append(
-            EpisodeState(key, position, status, run, newer, video_id, notes, transcript, thin, message, warnings,
-                         find_shorts(root, stem))
+            EpisodeState(key, position, status, run, newer, video_id, notes, transcript, thin, message,
+                         warnings + short_warnings, shorts)
         )
     return states
 
@@ -118,6 +119,6 @@ def resolve(src: WalkerSource, m: Manifest) -> list[EpisodeState]:
 def walker_entries(states: list[EpisodeState]) -> list[VideoEntry]:
     entries = []
     for s in states:
-        for rv in ([s.run] if s.run else []) + s.shorts:
+        for rv in ([s.run] if s.run else []) + [x for x in s.shorts if not x.missing]:
             entries.extend(e for e in discover(rv.folder).videos if e.path == rv.video)
     return entries

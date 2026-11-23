@@ -18,15 +18,18 @@ Shorts get no metadata and no Related-video step. Each Short links to its episod
 
 ## Design
 
-- `walker.py`: `ShortVideo(RunVideo)` adds `number: int` (1 to 5), `hook: str | None`, `why: str | None`.
-  `find_shorts(root, stem) -> list[ShortVideo]`: per run, the files `<stem>-short.mp4` (number 1) and
+- `walker.py`: `ShortVideo(RunVideo)` adds `number: int` (1 to 5), `title`, `hook`, `why` (`str | None`) and
+  `missing: bool`. `find_shorts(root, stem) -> (list[ShortVideo], warnings)`: per run, the files `<stem>-short.mp4` (number 1) and
   `<stem>-short-k.mp4` (k 2 to 5) that exist, in number order, each with its hook and why from that run's
   `short.yaml` entry k-1 (missing or unreadable → None). The run chosen: the newest run with a Short holding a
   `video_id` (any number), else the newest run with any Short; its Shorts are returned. `find_short` goes.
+  A Short whose `.mp4` Walker removed (a failed rebuild) but whose sidecar holds a `video_id` stays, `missing:
+  true`, so its id is still guarded and it still picks its run. Warnings (into the episode's `warnings`): a newer
+  run with Shorts than the live one shown, two runs with live Shorts, a missing Short. (From the architect review.)
 - `episodes.py`: `EpisodeState.shorts: list[ShortVideo]` (default empty) replaces `short`; `walker_entries` includes
   every Short.
 - `cli.py`: `_source_holders` checks every Short (named `<key> (Short k)`); `quota`'s `shorts` counts every Short
-  with a sidecar.
+  with a sidecar and a `video_id` (the ones publish updates).
 - `SKILL.md`: the episode table shows each Short (number, path, `video_id`, hook); a sidecar per Short (the Short's
   `video` with `.yaml`), from that Short's `.srt`, `hook` and `why`; titles differ between one episode's Shorts;
   publish updates each Short with a sidecar and id; the Studio checklist sets every Short's Related video to its
@@ -35,10 +38,12 @@ Shorts get no metadata and no Related-video step. Each Short links to its episod
 
 ## Non-goals
 
-No uploading of Shorts (still by hand), no playlist change, no change to Walker.
+No uploading of Shorts (still by hand), no playlist change, no change to Walker. Left as before: the Shorts' run
+is chosen on its own, not tied to the episode's `run` or `pin_run` (a pinned explainer's Shorts are not found), and
+a Short rebuilt in place keeps its old sidecar.
 
 ## Testing
 
 `find_shorts`: one, three, a gap (1 and 3), the hook/why per number, a missing or broken `short.yaml`, the live run
 wins over a newer one, none. `walker-status` JSON carries `shorts`. `_source_holders` refuses an id held by Short 2.
-`quota` counts three Shorts. `walker_entries` lists all.
+`quota` counts the Shorts with an id. A missing live Short is kept and guarded. `walker_entries` lists all.
