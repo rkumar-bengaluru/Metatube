@@ -12,7 +12,7 @@ from typing import Any, Literal
 from metatube_helper.discover import Discovery
 from metatube_helper.match import ChannelVideo
 
-PINNED_VERSION = "0.4.2"
+PINNED_VERSION = "0.5.0"
 QUOTA_UPLOAD = 1600
 QUOTA_UPDATE = 50
 QUOTA_PLAYLIST_CREATE = 50

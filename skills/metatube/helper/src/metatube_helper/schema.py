@@ -1,4 +1,4 @@
-"""Sidecar schema (mirrors ytstudio-cli 0.4.2 UploadSpec) and MetaTube lint rules."""
+"""Sidecar schema (mirrors ytstudio-cli 0.5.0 UploadSpec) and MetaTube lint rules."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field

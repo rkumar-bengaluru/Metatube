@@ -26,7 +26,7 @@ class Config:
     channel_id: str | None = None
     channel_title: str | None = None
     gcp_project: str | None = None
-    ytstudio_version: str = "0.4.2"
+    ytstudio_version: str = "0.5.0"
     audit_passed: bool = False
     defaults: dict = field(default_factory=lambda: dict(DEFAULTS))
 
