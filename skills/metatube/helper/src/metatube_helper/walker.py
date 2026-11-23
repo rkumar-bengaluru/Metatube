@@ -33,6 +33,17 @@ class RunVideo:
     mtime: float
 
 
+@dataclass
+class ShortVideo(RunVideo):
+    """One of a run's YouTube Shorts: Walker's number for it (1 to 5), its title, hook and why from `short.yaml`, and
+    whether its file is gone while its sidecar still holds a `video_id`."""
+    number: int = 1
+    title: str | None = None
+    hook: str | None = None
+    why: str | None = None
+    missing: bool = False
+
+
 def _read_yaml(path: Path) -> dict[str, Any]:
     try:
         data = YAML(typ="safe").load(path.read_text(encoding="utf-8"))
@@ -165,16 +176,62 @@ def find_runs(root: Path, stem: str) -> tuple[list[RunVideo], list[Path]]:
     return cands, explainers
 
 
-def find_short(root: Path, stem: str) -> RunVideo | None:
-    """The Short Walker rendered beside a run (`<run>/shorts/<stem>-short.mp4`): the one on YouTube, else the newest."""
+MAX_SHORTS = 5  # Walker's `project.shorts` cap
+
+
+def short_name(stem: str, number: int) -> str:
+    """Walker's name for Short `number`: `<stem>-short`, then `<stem>-short-2` … `<stem>-short-5`."""
+    return f"{stem}-short" if number == 1 else f"{stem}-short-{number}"
+
+
+def _text(entry: dict, key: str) -> str | None:
+    value = entry.get(key)
+    return str(value) if value else None
+
+
+def _run_shorts(run: Path, stem: str) -> list[ShortVideo]:
+    """The Shorts in `<run>/shorts/`, in Walker's order, each with its title, hook and why from Walker's `short.yaml`
+    (entry k-1 is Short k; a missing or unreadable file gives None). A Short whose `.mp4` Walker removed (a failed
+    rebuild, or `project.shorts` lowered) but whose sidecar still holds a `video_id` is kept, marked `missing`: it is still on YouTube."""
+    folder = run / "shorts"
+    entries = _read_yaml(folder / "short.yaml").get("shorts")
+    entries = entries if isinstance(entries, list) else []
+    out = []
+    for k in range(1, MAX_SHORTS + 1):
+        name = short_name(stem, k)
+        entry = entries[k - 1] if k <= len(entries) and isinstance(entries[k - 1], dict) else {}
+        meta = (k, _text(entry, "title"), _text(entry, "hook"), _text(entry, "why"))
+        if (folder / f"{name}.mp4").is_file():
+            rv = run_video(folder, name)  # its run_id is "shorts"; a Short's is its run's
+            out.append(ShortVideo(run.name, rv.folder, rv.video, rv.srt, rv.sidecar, rv.video_id, rv.mtime, *meta))
+        elif (sidecar := folder / f"{name}.yaml").is_file() and (vid := _read_yaml(sidecar).get("video_id")):
+            out.append(ShortVideo(run.name, folder, folder / f"{name}.mp4", None, sidecar, str(vid), 0.0, *meta,
+                                  missing=True))
+    return out
+
+
+def find_shorts(root: Path, stem: str) -> tuple[list[ShortVideo], list[str]]:
+    """The Shorts Walker rendered beside one run, in Walker's order: the newest run with a Short on YouTube, else the
+    newest run with a Short. And warnings: a newer render's Shorts left out, two renders with Shorts on YouTube, a
+    Short on YouTube whose file is gone."""
     if not root.is_dir():
-        return None
-    shorts = [run_video(run / "shorts", f"{stem}-short") for run in sorted(p for p in root.iterdir() if p.is_dir())
-              if (run / "shorts" / f"{stem}-short.mp4").is_file()]
-    for s in shorts:
-        s.run_id = s.folder.parent.name  # the run's id, not "shorts"
-    # shortcut: two live Shorts with different ids pick the newest, not a disagreement; add one if it happens
-    return choose_run([s for s in shorts if s.video_id]) or choose_run(shorts)
+        return [], []
+    by_run = [s for run in sorted(p for p in root.iterdir() if p.is_dir()) if (s := _run_shorts(run, stem))]
+    live = [s for s in by_run if any(x.video_id for x in s)]
+    pick = choose_run([s[0] for s in live]) or choose_run([s[0] for s in by_run])
+    shorts = next((s for s in by_run if s[0] is pick), [])
+    warnings = []
+    if len(live) > 1:
+        warnings.append(f"renders {', '.join(s[0].run_id for s in live)} all have Shorts on YouTube; showing "
+                        f"{pick.run_id}'s, the newest")
+    newest = choose_run([s[0] for s in by_run])
+    if live and newest is not pick:
+        nums = ", ".join(str(x.number) for x in next(s for s in by_run if s[0] is newest))
+        warnings.append(f"the newer render {newest.run_id} has Shorts {nums}; these are {pick.run_id}'s because one "
+                        "of them is on YouTube")
+    warnings += [f"Short {x.number} is on YouTube ({x.video_id}) but its file is gone (Walker removed it: a failed "
+                 "rebuild, or project.shorts lowered)" for x in shorts if x.missing]
+    return shorts, warnings
 
 
 def choose_run(cands: list[RunVideo]) -> RunVideo | None:

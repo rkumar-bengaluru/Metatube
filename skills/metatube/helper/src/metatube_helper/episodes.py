@@ -8,11 +8,12 @@ from metatube_helper.discover import VideoEntry, discover, is_thin
 from metatube_helper.manifest import SINGLE_KEY, EpisodeRecord, Manifest
 from metatube_helper.walker import (
     RunVideo,
+    ShortVideo,
     WalkerSource,
     choose_run,
     expected_stem,
     find_runs,
-    find_short,
+    find_shorts,
     odd_run_ids,
     run_video,
     video_root,
@@ -34,7 +35,8 @@ class EpisodeState:
     thin_sources: list[Path]
     message: str = ""
     warnings: list[str] = field(default_factory=list)
-    short: RunVideo | None = None  # the episode's YouTube Short; its own sidecar and video id, no playlist
+    shorts: list[ShortVideo] = field(default_factory=list)  # its YouTube Shorts, in Walker's order; each has
+    # its own sidecar and video id, and none goes in the playlist
 
     @property
     def has_source(self) -> bool:
@@ -106,9 +108,10 @@ def resolve(src: WalkerSource, m: Manifest) -> list[EpisodeState]:
             warnings.append(
                 f"run ids not in Walker's YYYYMMDD-HHMMSS form: {', '.join(odd)}; chose by file time (best effort)"
             )
+        shorts, short_warnings = find_shorts(root, stem)
         states.append(
-            EpisodeState(key, position, status, run, newer, video_id, notes, transcript, thin, message, warnings,
-                         find_short(root, stem))
+            EpisodeState(key, position, status, run, newer, video_id, notes, transcript, thin, message,
+                         warnings + short_warnings, shorts)
         )
     return states
 
@@ -116,7 +119,6 @@ def resolve(src: WalkerSource, m: Manifest) -> list[EpisodeState]:
 def walker_entries(states: list[EpisodeState]) -> list[VideoEntry]:
     entries = []
     for s in states:
-        for rv in (s.run, s.short):
-            if rv:
-                entries.extend(e for e in discover(rv.folder).videos if e.path == rv.video)
+        for rv in ([s.run] if s.run else []) + [x for x in s.shorts if not x.missing]:
+            entries.extend(e for e in discover(rv.folder).videos if e.path == rv.video)
     return entries
