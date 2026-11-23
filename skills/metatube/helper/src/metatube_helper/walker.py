@@ -33,6 +33,14 @@ class RunVideo:
     mtime: float
 
 
+@dataclass
+class ShortVideo(RunVideo):
+    """One of a run's YouTube Shorts: Walker's number for it (1 to 5) and its hook and why from `short.yaml`."""
+    number: int = 1
+    hook: str | None = None
+    why: str | None = None
+
+
 def _read_yaml(path: Path) -> dict[str, Any]:
     try:
         data = YAML(typ="safe").load(path.read_text(encoding="utf-8"))
@@ -165,16 +173,41 @@ def find_runs(root: Path, stem: str) -> tuple[list[RunVideo], list[Path]]:
     return cands, explainers
 
 
-def find_short(root: Path, stem: str) -> RunVideo | None:
-    """The Short Walker rendered beside a run (`<run>/shorts/<stem>-short.mp4`): the one on YouTube, else the newest."""
+MAX_SHORTS = 5  # Walker's `project.shorts` cap
+
+
+def short_name(stem: str, number: int) -> str:
+    """Walker's name for Short `number`: `<stem>-short`, then `<stem>-short-2` … `<stem>-short-5`."""
+    return f"{stem}-short" if number == 1 else f"{stem}-short-{number}"
+
+
+def _run_shorts(run: Path, stem: str) -> list[ShortVideo]:
+    """The Shorts in `<run>/shorts/`, in Walker's order, each with its hook and why from Walker's `short.yaml`
+    (entry k-1 is Short k; a missing or unreadable file gives None)."""
+    folder = run / "shorts"
+    entries = _read_yaml(folder / "short.yaml").get("shorts")
+    entries = entries if isinstance(entries, list) else []
+    out = []
+    for k in range(1, MAX_SHORTS + 1):
+        if not (folder / f"{short_name(stem, k)}.mp4").is_file():
+            continue
+        rv = run_video(folder, short_name(stem, k))
+        entry = entries[k - 1] if k <= len(entries) and isinstance(entries[k - 1], dict) else {}
+        hook, why = entry.get("hook"), entry.get("why")
+        out.append(ShortVideo(run.name, rv.folder, rv.video, rv.srt, rv.sidecar, rv.video_id, rv.mtime,  # the run's id
+                              k, str(hook) if hook else None, str(why) if why else None))
+    return out
+
+
+def find_shorts(root: Path, stem: str) -> list[ShortVideo]:
+    """The Shorts Walker rendered beside one run, in Walker's order: the newest run with a Short on YouTube, else the
+    newest run with a Short."""
     if not root.is_dir():
-        return None
-    shorts = [run_video(run / "shorts", f"{stem}-short") for run in sorted(p for p in root.iterdir() if p.is_dir())
-              if (run / "shorts" / f"{stem}-short.mp4").is_file()]
-    for s in shorts:
-        s.run_id = s.folder.parent.name  # the run's id, not "shorts"
-    # shortcut: two live Shorts with different ids pick the newest, not a disagreement; add one if it happens
-    return choose_run([s for s in shorts if s.video_id]) or choose_run(shorts)
+        return []
+    by_run = [s for run in sorted(p for p in root.iterdir() if p.is_dir()) if (s := _run_shorts(run, stem))]
+    # shortcut: two live runs with different ids pick the newest, not a disagreement; add one if it happens
+    pick = choose_run([s[0] for s in by_run if any(x.video_id for x in s)]) or choose_run([s[0] for s in by_run])
+    return next((s for s in by_run if s[0] is pick), [])
 
 
 def choose_run(cands: list[RunVideo]) -> RunVideo | None:

@@ -173,13 +173,24 @@ def test_walker_sync_run_vs_run_disagreement_exits_1_untouched(home, series, cap
     assert (series / "metatube.yaml").read_bytes() == before
 
 
-def short_dir(run, ep, video_id=None):
+def short_dir(run, ep, video_id=None, numbers=(1,), sheet=None):
     d = run / "shorts"
-    _write(d / f"cube-gs-{ep}-short.mp4")
-    _write(d / f"cube-gs-{ep}-short.srt", SRT)
-    if video_id:
-        _write(d / f"cube-gs-{ep}-short.yaml", f"video_id: {video_id}\n")
+    for k in numbers:
+        name = f"cube-gs-{ep}-short" + ("" if k == 1 else f"-{k}")
+        _write(d / f"{name}.mp4")
+        _write(d / f"{name}.srt", SRT)
+        if video_id and k == numbers[0]:
+            _write(d / f"{name}.yaml", f"video_id: {video_id}\n")
+    if sheet is not None:
+        _write(d / "short.yaml", sheet)
     return d
+
+
+SHEET = ("shorts:\n"
+         "  - {title: One, hook: \"First hook\", why: \"stands alone\"}\n"
+         "  - {title: Two, hook: \"Second hook\"}\n"
+         "  - {title: Three, hook: \"Third hook\", why: \"third why\"}\n"
+         "asked: 3\n")
 
 
 def test_short_found_newest_unless_one_is_live(home, series):
@@ -188,13 +199,55 @@ def test_short_found_newest_unless_one_is_live(home, series):
     short_dir(old, "ep1")
     short_dir(new, "ep1")
     s = states(series)
-    assert s["ep1"].short.run_id == "20261028-100000" and s["ep1"].short.srt is not None
-    assert s["ep2"].short is None
+    assert [x.run_id for x in s["ep1"].shorts] == ["20261028-100000"] and s["ep1"].shorts[0].srt is not None
+    assert s["ep2"].shorts == []
     short_dir(old, "ep1", video_id="shortshort1")
-    assert states(series)["ep1"].short.run_id == "20261027-100000"
+    assert states(series)["ep1"].shorts[0].run_id == "20261027-100000"
 
 
-def test_walker_entries_include_short(home, series):
-    short_dir(run_dir(home, "ep1", "20261027-100000"), "ep1")
+def test_every_short_of_the_run_in_order_with_its_hook(home, series):
+    short_dir(run_dir(home, "ep1", "20261027-100000"), "ep1", numbers=(1, 2, 3), sheet=SHEET)
+    shorts = states(series)["ep1"].shorts
+    assert [(x.number, x.video.name, x.hook, x.why) for x in shorts] == [
+        (1, "cube-gs-ep1-short.mp4", "First hook", "stands alone"),
+        (2, "cube-gs-ep1-short-2.mp4", "Second hook", None),
+        (3, "cube-gs-ep1-short-3.mp4", "Third hook", "third why")]
+    assert all(x.run_id == "20261027-100000" for x in shorts)
+
+
+def test_a_gap_keeps_numbers_and_a_broken_sheet_gives_no_hooks(home, series):
+    short_dir(run_dir(home, "ep1", "20261027-100000"), "ep1", numbers=(1, 3), sheet="shorts: [oops\n")
+    shorts = states(series)["ep1"].shorts
+    assert [(x.number, x.hook) for x in shorts] == [(1, None), (3, None)]
+
+
+def test_a_live_second_short_keeps_its_run(home, series):
+    old = run_dir(home, "ep1", "20261027-100000")
+    short_dir(old, "ep1", numbers=(1, 2))
+    _write(old / "shorts" / "cube-gs-ep1-short-2.yaml", "video_id: shortshort2\n")
+    short_dir(run_dir(home, "ep1", "20261028-100000"), "ep1")
+    shorts = states(series)["ep1"].shorts
+    assert [(x.run_id, x.number, x.video_id) for x in shorts] == [
+        ("20261027-100000", 1, None), ("20261027-100000", 2, "shortshort2")]
+
+
+def test_only_numbers_1_to_5_count(home, series):
+    d = short_dir(run_dir(home, "ep1", "20261027-100000"), "ep1", numbers=(1,))
+    _write(d / "cube-gs-ep1-short-6.mp4")
+    _write(d / "cube-gs-ep1-short-2.part.mp4")
+    assert [x.number for x in states(series)["ep1"].shorts] == [1]
+
+
+def test_walker_status_lists_shorts(home, series, capsys):
+    short_dir(run_dir(home, "ep1", "20261027-100000"), "ep1", numbers=(1, 2), sheet=SHEET)
+    assert cli.main(["walker-status", str(series)]) == 0
+    import json
+    ep1 = next(e for e in json.loads(capsys.readouterr().out)["episodes"] if e["key"] == "ep1")
+    assert [x["number"] for x in ep1["shorts"]] == [1, 2] and ep1["shorts"][1]["hook"] == "Second hook"
+    assert "short" not in ep1
+
+
+def test_walker_entries_include_every_short(home, series):
+    short_dir(run_dir(home, "ep1", "20261027-100000"), "ep1", numbers=(1, 2))
     stems = [e.stem for e in walker_entries(list(states(series).values()))]
-    assert stems == ["cube-gs-ep1", "cube-gs-ep1-short"]
+    assert stems == ["cube-gs-ep1", "cube-gs-ep1-short", "cube-gs-ep1-short-2"]

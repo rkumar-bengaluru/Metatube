@@ -541,6 +541,21 @@ def test_set_video_id_source_refuses_episode_id_for_its_short(tmp_path, capsys, 
     code, out = run(capsys, "set-video-id", str(target), "shortshort1", "--source", str(s))
     assert code == 0
     code, out = run(capsys, "set-video-id", str(runs[1] / "cube-gs-ep2.yaml"), "shortshort1", "--source", str(s))
-    assert code == 1 and "ep1 (Short)" in out["error"]
+    assert code == 1 and "ep1 (Short 1)" in out["error"]
     code, out = run(capsys, "quota", str(s), "--mode", "update")
     assert out["shorts"] == 1
+
+
+def test_set_video_id_source_refuses_an_id_a_second_short_holds(tmp_path, capsys, monkeypatch):
+    s, runs = _rendered_series(tmp_path, monkeypatch, ids=("abcdefghijk", None))
+    for name in ("cube-gs-ep1-short", "cube-gs-ep1-short-2"):
+        write_p(runs[0] / "shorts" / f"{name}.mp4")
+        write_p(runs[0] / "shorts" / f"{name}.yaml", SIDECAR)
+    code, out = run(capsys, "set-video-id", str(runs[0] / "shorts" / "cube-gs-ep1-short-2.yaml"), "shortshort2",
+                    "--source", str(s))
+    assert code == 0
+    code, out = run(capsys, "set-video-id", str(runs[0] / "shorts" / "cube-gs-ep1-short.yaml"), "shortshort2",
+                    "--source", str(s))
+    assert code == 1 and "ep1 (Short 2)" in out["error"]
+    code, out = run(capsys, "quota", str(s), "--mode", "update")
+    assert out["shorts"] == 2
