@@ -561,6 +561,7 @@ def test_set_video_id_source_refuses_an_id_a_second_short_holds(tmp_path, capsys
     assert out["shorts"] == 1  # only Short 2 has an id: a Short without one is not updated
     code, out = run(capsys, "set-video-id", str(runs[0] / "shorts" / "cube-gs-ep1-short.yaml"), "shortshort1",
                     "--source", str(s))
+    assert code == 0
     code, out = run(capsys, "quota", str(s), "--mode", "update")
     assert out["shorts"] == 2
 

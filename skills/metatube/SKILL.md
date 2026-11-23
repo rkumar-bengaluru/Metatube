@@ -196,10 +196,11 @@ First `walker-status FOLDER`. Not a Walker source → **Plain folder**; otherwis
    `<run>/shorts/<stem>-short.mp4`, then `<stem>-short-2.mp4` … `-short-5.mp4`, each with its `number`, `hook`
    and `why` (from Walker's `short.yaml`). The user uploads each by hand as its own video; none goes in the
    playlist. Show each in the table (number, path, `video_id`, hook); `shorts: []` means the render made none.
-   A Short with `missing: true` is on YouTube but Walker removed its file (a failed rebuild): keep its
-   sidecar, don't redraft it, and tell the user. Show the episode's `warnings` about Shorts too: a newer
-   render with more Shorts than the one shown (the shown one has a Short on YouTube; the user decides
-   whether to move to the newer render's Shorts), or two renders both with Shorts on YouTube.
+   A Short with `missing: true` is on YouTube but Walker removed its file (a failed rebuild, or
+   `project.shorts` lowered): keep its sidecar, don't redraft it, and tell the user. Show the episode's
+   `warnings` about Shorts too: a newer render with more Shorts than the one shown (the shown one has a
+   Short on YouTube; the user decides whether to move to the newer render's Shorts), or two renders both
+   with Shorts on YouTube.
 3. Sources per episode: its `notes` (`story.md`, `screenplay.md`, plus the series `story.md`) and its
    `transcript` (the run's `.srt`, for chapters). `has_source` and `thin_sources` mean what they mean for
    a plain folder. Also read `series.yaml` (or `walker.yaml`): `series.title`, `project.name`,

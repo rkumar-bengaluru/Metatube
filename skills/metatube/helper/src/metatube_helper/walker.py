@@ -192,7 +192,7 @@ def _text(entry: dict, key: str) -> str | None:
 def _run_shorts(run: Path, stem: str) -> list[ShortVideo]:
     """The Shorts in `<run>/shorts/`, in Walker's order, each with its title, hook and why from Walker's `short.yaml`
     (entry k-1 is Short k; a missing or unreadable file gives None). A Short whose `.mp4` Walker removed (a failed
-    rebuild) but whose sidecar still holds a `video_id` is kept, marked `missing`: it is still on YouTube."""
+    rebuild, or `project.shorts` lowered) but whose sidecar still holds a `video_id` is kept, marked `missing`: it is still on YouTube."""
     folder = run / "shorts"
     entries = _read_yaml(folder / "short.yaml").get("shorts")
     entries = entries if isinstance(entries, list) else []
@@ -229,8 +229,8 @@ def find_shorts(root: Path, stem: str) -> tuple[list[ShortVideo], list[str]]:
         nums = ", ".join(str(x.number) for x in next(s for s in by_run if s[0] is newest))
         warnings.append(f"the newer render {newest.run_id} has Shorts {nums}; these are {pick.run_id}'s because one "
                         "of them is on YouTube")
-    warnings += [f"Short {x.number} is on YouTube ({x.video_id}) but its file is gone (Walker removes a Short whose "
-                 "rebuild failed)" for x in shorts if x.missing]
+    warnings += [f"Short {x.number} is on YouTube ({x.video_id}) but its file is gone (Walker removed it: a failed "
+                 "rebuild, or project.shorts lowered)" for x in shorts if x.missing]
     return shorts, warnings
 
 
